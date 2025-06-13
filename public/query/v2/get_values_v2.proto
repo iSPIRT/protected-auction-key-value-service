@@ -1,0 +1,161 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package kv_server.v2;
+
+import "google/api/annotations.proto";
+import "google/api/httpbody.proto";
+import "google/protobuf/struct.proto";
+import "google/rpc/status.proto";
+import "public/api_schema.proto";
+import "src/logger/logger.proto";
+
+// Key Value Service API V2.
+// Spec:
+// https://github.com/WICG/turtledove/blob/main/FLEDGE_Key_Value_Server_API.md#query-api-version-2
+service KeyValueService {
+  // Plain text version of the V2 GetValues query API. This is intended to be
+  // used for debugging and demoing purposes. The result is a JSON list
+  // which contains the compression groups.
+  // Example query:
+  // https://github.com/privacysandbox/protected-auction-key-value-service/blob/main/docs/testing_the_query_protocol.md#plaintext-query-getvalues
+  rpc GetValuesHttp(GetValuesHttpRequest) returns (google.api.HttpBody) {
+    option (google.api.http) = {
+      put: "/v2/getvalues"
+      body: "raw_body"
+      additional_bindings {put: "/**/v2/getvalues"}
+    };
+  }
+
+  rpc GetValues(GetValuesRequest) returns (GetValuesResponse) {}
+
+  // V2 GetValues API based on the Oblivious HTTP protocol.
+  rpc ObliviousGetValues(ObliviousGetValuesRequest) returns (google.api.HttpBody) {
+    option (google.api.http) = {
+      post: "/v2/oblivious_getvalues"
+      body: "raw_body"
+    };
+  }
+}
+
+message GetValuesHttpRequest {
+  google.api.HttpBody raw_body = 1;
+}
+
+message ObliviousGetValuesRequest {
+  google.api.HttpBody raw_body = 1;
+}
+
+// One partition is executed by one UDF. The content, mostly the arguments of
+// one partition is from the same source so there is no cross-source privacy
+// concerns for the UDF to process the arguments together. For data from
+// different sources, they must be put in different partitions to avoid having
+// one UDF process them all at once. In Protected Audience, one interest group
+// may be one partition. All the trusted bidding/scoring keys from that interest
+// group can be sent in the same partition. If group-by-site is enabled on the
+// client side, more than one interest group can be put into the same parititon
+// as long as they are from the same site. This is used as a concrete example.
+// Reference the official device side Protected Audience documentation for the
+// most up-to-date information.
+message RequestPartition {
+  int32 id = 1;
+  // Partitions from the same owner can be compressed together so they can
+  // belong to the same compression group. The actual number does not matter as
+  // long as it is unique from other owners' compression groups.
+  optional int32 compression_group_id = 2;
+  // Per partition metadata.
+  google.protobuf.Struct metadata = 3;
+  // Each input is one argument to UDF
+  // They are passed to the UDF in the same order as stored here.
+  repeated UDFArgument arguments = 5;
+}
+
+// Key Value Service GetValues core request in proto
+message GetValuesRequest {
+  // Client and its version. Used for debugging and bookkeeping purposes.
+  string client_version = 1;
+  // Metadata that is useful for all partitions in a request.
+  google.protobuf.Struct metadata = 2;
+  repeated RequestPartition partitions = 3;
+  // Context useful for logging and tracing requests
+  privacy_sandbox.server_common.LogContext log_context = 4;
+  // Consented debugging configuration
+  privacy_sandbox.server_common.ConsentedDebugConfiguration consented_debug_config = 5;
+  // Algorithm accepted by the browser for the response.
+  // Must contain at least one of: none, gzip, brotli.
+  repeated string accept_compression = 6;
+  // Per-partition metadata allows batching of metadata across partitions
+  // to reduce duplicate partition-level metadata.
+  // The server expects the Struct's `field` to be a map of
+  // metadata names (string) to a list of `google.protobuf.Struct`.
+  // Each `google.protobuf.Struct` contains a `value` field
+  // with the actual metadata value and an optional `ids` field
+  // containing a list of [compression group id, partition id]
+  // for which the metadata value applies.
+  // If no `ids` field is present, the given `value` will apply to
+  // all partitions.
+  // Equivalent JSON example (for simplicity):
+  // {
+  //   "perPartitionMetadata": {
+  //     "someMetadataName": [
+  //       {"value": "value string", "ids": [[0,0], [0,1]},
+  //       {"value": "value string 2", "ids": [[2,0]]}
+  //     ],
+  //     "someOtherMetadata": [
+  //       {"value": "a value that applies to all partitions"}
+  //     ]
+  //   }
+  // }
+  google.protobuf.Struct per_partition_metadata = 7;
+}
+
+message ResponsePartition {
+  int32 id = 1;
+  oneof output_type {
+    string string_output = 2;
+    google.rpc.Status status = 3;
+  }
+}
+
+// In response, ONLY partitions from the same compression group can be
+// compressed together.
+//
+// Different use cases of the KV server may have different number of partitions.
+// For use cases where there may be more than one partition, the server
+// will compress while it builds the response, before letting gRPC send them
+// over the wire. In use cases where there is always only one partition, the
+// server will rely on gRPC compression instead.
+message CompressionGroup {
+  // All responses for all partitions with this compression group id specified in the request are present in this object.
+  optional int32 compression_group_id = 1;
+  // Adtech-specified TTL for client-side caching. In milliseconds. Unset means no caching.
+  optional int32 ttl_ms = 2;
+  // Compressed CBOR binary string. For details see compressed response content schema -- V2CompressionGroup.
+  bytes content = 3;
+}
+
+message GetValuesResponse {
+  // For single partition response use cases, no explicit compression is necessary at
+  // request handling layer. Compression can be applied during the
+  // communication by the protocol layer such as gRPC or HTTP.
+  // Note that single partition responses in cbor are not currently supported.
+  ResponsePartition single_partition = 1;
+  repeated CompressionGroup compression_groups = 2;
+  // Debug logs to send back to upstream servers (only in non_prod)
+  // The server name in the debug info will be set by the upstream servers after
+  // they get response from KV server
+  privacy_sandbox.server_common.DebugInfo debug_info = 3;
+}

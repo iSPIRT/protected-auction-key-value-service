@@ -1,0 +1,1681 @@
+diff --git a/include/abstract_data_store.h b/include/abstract_data_store.h
+index 89856f1..d4a77c3 100644
+--- a/include/abstract_data_store.h
++++ b/include/abstract_data_store.h
+@@ -23,7 +23,7 @@ template <typename data_t> class AbstractDataStore
+     virtual ~AbstractDataStore() = default;
+ 
+     // Return number of points returned
+-    virtual location_t load(const std::string &filename) = 0;
++    virtual location_t load(const std::string &filename, int& ec) = 0;
+ 
+     // Why does store take num_pts? Since store only has capacity, but we allow
+     // resizing we can end up in a situation where the store has spare capacity.
+diff --git a/include/abstract_graph_store.h b/include/abstract_graph_store.h
+index 4d6906c..374406e 100644
+--- a/include/abstract_graph_store.h
++++ b/include/abstract_graph_store.h
+@@ -22,7 +22,7 @@ class AbstractGraphStore
+ 
+     // returns tuple of <nodes_read, start, num_frozen_points>
+     virtual std::tuple<uint32_t, uint32_t, size_t> load(const std::string &index_path_prefix,
+-                                                        const size_t num_points) = 0;
++                                                        const size_t num_points, int& ec) = 0;
+     virtual int store(const std::string &index_path_prefix, const size_t num_points, const size_t num_fz_points,
+                       const uint32_t start) = 0;
+ 
+diff --git a/include/abstract_index.h b/include/abstract_index.h
+index 059866f..10a89c0 100644
+--- a/include/abstract_index.h
++++ b/include/abstract_index.h
+@@ -52,7 +52,7 @@ class AbstractIndex
+ #ifdef EXEC_ENV_OLS
+     virtual void load(AlignedFileReader &reader, uint32_t num_threads, uint32_t search_l) = 0;
+ #else
+-    virtual void load(const char *index_file, uint32_t num_threads, uint32_t search_l) = 0;
++    virtual void load(const char *index_file, uint32_t num_threads, uint32_t search_l, int& ec) noexcept = 0;
+ #endif
+ 
+     // For FastL2 search on optimized layout
+@@ -70,7 +70,7 @@ class AbstractIndex
+     // IDtype is either uint32_t or uint64_t
+     template <typename data_type, typename IDType>
+     std::pair<uint32_t, uint32_t> search(const data_type *query, const size_t K, const uint32_t L, IDType *indices,
+-                                         float *distances = nullptr);
++                                         float *distances = nullptr) noexcept;
+ 
+     // Filter support search
+     // IndexType is either uint32_t or uint64_t
+@@ -109,7 +109,7 @@ class AbstractIndex
+   private:
+     virtual void _build(const DataType &data, const size_t num_points_to_load, TagVector &tags) = 0;
+     virtual std::pair<uint32_t, uint32_t> _search(const DataType &query, const size_t K, const uint32_t L,
+-                                                  std::any &indices, float *distances = nullptr) = 0;
++                                                  std::any &indices, float *distances = nullptr) noexcept = 0;
+     virtual std::pair<uint32_t, uint32_t> _search_with_filters(const DataType &query, const std::string &filter_label,
+                                                                const size_t K, const uint32_t L, std::any &indices,
+                                                                float *distances) = 0;
+diff --git a/include/in_mem_data_store.h b/include/in_mem_data_store.h
+index 0a0a617..7da9eb2 100644
+--- a/include/in_mem_data_store.h
++++ b/include/in_mem_data_store.h
+@@ -25,7 +25,7 @@ template <typename data_t> class InMemDataStore : public AbstractDataStore<data_
+     InMemDataStore(const location_t capacity, const size_t dim, std::unique_ptr<Distance<data_t>> distance_fn);
+     virtual ~InMemDataStore();
+ 
+-    virtual location_t load(const std::string &filename) override;
++    virtual location_t load(const std::string &filename, int& ec) override;
+     virtual size_t save(const std::string &filename, const location_t num_points) override;
+ 
+     virtual size_t get_aligned_dim() const override;
+@@ -66,7 +66,7 @@ template <typename data_t> class InMemDataStore : public AbstractDataStore<data_
+     virtual location_t expand(const location_t new_size) override;
+     virtual location_t shrink(const location_t new_size) override;
+ 
+-    virtual location_t load_impl(const std::string &filename);
++    virtual location_t load_impl(const std::string &filename, int& ec);
+ #ifdef EXEC_ENV_OLS
+     virtual location_t load_impl(AlignedFileReader &reader);
+ #endif
+diff --git a/include/in_mem_graph_store.h b/include/in_mem_graph_store.h
+index d0206a7..41f3a9d 100644
+--- a/include/in_mem_graph_store.h
++++ b/include/in_mem_graph_store.h
+@@ -15,7 +15,7 @@ class InMemGraphStore : public AbstractGraphStore
+ 
+     // returns tuple of <nodes_read, start, num_frozen_points>
+     virtual std::tuple<uint32_t, uint32_t, size_t> load(const std::string &index_path_prefix,
+-                                                        const size_t num_points) override;
++                                                        const size_t num_points, int& ec) override;
+     virtual int store(const std::string &index_path_prefix, const size_t num_points, const size_t num_frozen_points,
+                       const uint32_t start) override;
+ 
+@@ -33,7 +33,7 @@ class InMemGraphStore : public AbstractGraphStore
+     virtual uint32_t get_max_observed_degree() override;
+ 
+   protected:
+-    virtual std::tuple<uint32_t, uint32_t, size_t> load_impl(const std::string &filename, size_t expected_num_points);
++    virtual std::tuple<uint32_t, uint32_t, size_t> load_impl(const std::string &filename, size_t expected_num_points, int& ec);
+ #ifdef EXEC_ENV_OLS
+     virtual std::tuple<uint32_t, uint32_t, size_t> load_impl(AlignedFileReader &reader, size_t expected_num_points);
+ #endif
+diff --git a/include/index.h b/include/index.h
+index b9bf4f3..36405ef 100644
+--- a/include/index.h
++++ b/include/index.h
+@@ -80,7 +80,7 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
+     // Reads the number of frozen points from graph's metadata file section.
+     DISKANN_DLLEXPORT static size_t get_graph_num_frozen_points(const std::string &graph_file);
+ 
+-    DISKANN_DLLEXPORT void load(const char *index_file, uint32_t num_threads, uint32_t search_l);
++    DISKANN_DLLEXPORT void load(const char *index_file, uint32_t num_threads, uint32_t search_l, int& ec) noexcept;
+ #endif
+ 
+     // get some private variables
+@@ -132,7 +132,7 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
+     // can customize L on a per-query basis without tampering with "Parameters"
+     template <typename IDType>
+     DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> search(const T *query, const size_t K, const uint32_t L,
+-                                                           IDType *indices, float *distances = nullptr);
++                                                           IDType *indices, float *distances = nullptr) noexcept;
+ 
+     // Initialize space for res_vectors before calling.
+     DISKANN_DLLEXPORT size_t search_with_tags(const T *query, const uint64_t K, const uint32_t L, TagT *tags,
+@@ -205,7 +205,7 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
+     virtual void _build(const DataType &data, const size_t num_points_to_load, TagVector &tags) override;
+ 
+     virtual std::pair<uint32_t, uint32_t> _search(const DataType &query, const size_t K, const uint32_t L,
+-                                                  std::any &indices, float *distances = nullptr) override;
++                                                  std::any &indices, float *distances = nullptr) noexcept override;
+     virtual std::pair<uint32_t, uint32_t> _search_with_filters(const DataType &query,
+                                                                const std::string &filter_label_raw, const size_t K,
+                                                                const uint32_t L, std::any &indices,
+@@ -326,8 +326,8 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
+     DISKANN_DLLEXPORT size_t load_tags(AlignedFileReader &reader);
+     DISKANN_DLLEXPORT size_t load_delete_set(AlignedFileReader &reader);
+ #else
+-    DISKANN_DLLEXPORT size_t load_graph(const std::string filename, size_t expected_num_points);
+-    DISKANN_DLLEXPORT size_t load_data(std::string filename0);
++    DISKANN_DLLEXPORT size_t load_graph(const std::string filename, size_t expected_num_points, int& ec);
++    DISKANN_DLLEXPORT size_t load_data(std::string filename0, int& ec);
+     DISKANN_DLLEXPORT size_t load_tags(const std::string tag_file_name);
+     DISKANN_DLLEXPORT size_t load_delete_set(const std::string &filename);
+ #endif
+diff --git a/include/index_config.h b/include/index_config.h
+index a8e64d0..60acdb9 100644
+--- a/include/index_config.h
++++ b/include/index_config.h
+@@ -17,6 +17,7 @@ enum class GraphStoreStrategy
+ 
+ struct IndexConfig
+ {
++    IndexConfig() = default;
+     DataStoreStrategy data_strategy;
+     GraphStoreStrategy graph_strategy;
+ 
+@@ -66,97 +67,97 @@ class IndexConfigBuilder
+   public:
+     IndexConfigBuilder() = default;
+ 
+-    IndexConfigBuilder &with_metric(Metric m)
++    IndexConfigBuilder &with_metric(Metric m) noexcept
+     {
+         this->_metric = m;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_graph_load_store_strategy(GraphStoreStrategy graph_strategy)
++    IndexConfigBuilder &with_graph_load_store_strategy(GraphStoreStrategy graph_strategy) noexcept
+     {
+         this->_graph_strategy = graph_strategy;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_data_load_store_strategy(DataStoreStrategy data_strategy)
++    IndexConfigBuilder &with_data_load_store_strategy(DataStoreStrategy data_strategy) noexcept
+     {
+         this->_data_strategy = data_strategy;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_dimension(size_t dimension)
++    IndexConfigBuilder &with_dimension(size_t dimension) noexcept
+     {
+         this->_dimension = dimension;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_max_points(size_t max_points)
++    IndexConfigBuilder &with_max_points(size_t max_points) noexcept
+     {
+         this->_max_points = max_points;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &is_dynamic_index(bool dynamic_index)
++    IndexConfigBuilder &is_dynamic_index(bool dynamic_index) noexcept
+     {
+         this->_dynamic_index = dynamic_index;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &is_enable_tags(bool enable_tags)
++    IndexConfigBuilder &is_enable_tags(bool enable_tags) noexcept
+     {
+         this->_enable_tags = enable_tags;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &is_pq_dist_build(bool pq_dist_build)
++    IndexConfigBuilder &is_pq_dist_build(bool pq_dist_build) noexcept
+     {
+         this->_pq_dist_build = pq_dist_build;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &is_concurrent_consolidate(bool concurrent_consolidate)
++    IndexConfigBuilder &is_concurrent_consolidate(bool concurrent_consolidate) noexcept
+     {
+         this->_concurrent_consolidate = concurrent_consolidate;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &is_use_opq(bool use_opq)
++    IndexConfigBuilder &is_use_opq(bool use_opq) noexcept
+     {
+         this->_use_opq = use_opq;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &is_filtered(bool is_filtered)
++    IndexConfigBuilder &is_filtered(bool is_filtered) noexcept
+     {
+         this->_filtered_index = is_filtered;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_num_pq_chunks(size_t num_pq_chunks)
++    IndexConfigBuilder &with_num_pq_chunks(size_t num_pq_chunks) noexcept
+     {
+         this->_num_pq_chunks = num_pq_chunks;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_num_frozen_pts(size_t num_frozen_pts)
++    IndexConfigBuilder &with_num_frozen_pts(size_t num_frozen_pts) noexcept
+     {
+         this->_num_frozen_pts = num_frozen_pts;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_label_type(const std::string &label_type)
++    IndexConfigBuilder &with_label_type(const std::string &label_type) noexcept
+     {
+         this->_label_type = label_type;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_tag_type(const std::string &tag_type)
++    IndexConfigBuilder &with_tag_type(const std::string &tag_type) noexcept
+     {
+         this->_tag_type = tag_type;
+         return *this;
+     }
+ 
+-    IndexConfigBuilder &with_data_type(const std::string &data_type)
++    IndexConfigBuilder &with_data_type(const std::string &data_type) noexcept
+     {
+         this->_data_type = data_type;
+         return *this;
+@@ -196,29 +197,34 @@ class IndexConfigBuilder
+         return *this;
+     }
+ 
+-    IndexConfig build()
++    IndexConfig build(int& ec) noexcept
+     {
+-        if (_data_type == "" || _data_type.empty())
+-            throw ANNException("Error: data_type can not be empty", -1);
+-
+-        if (_dynamic_index && _num_frozen_pts == 0)
+-        {
+-            _num_frozen_pts = 1;
+-        }
+-
+-        if (_dynamic_index)
+-        {
+-            if (_index_search_params != nullptr && _index_search_params->initial_search_list_size == 0)
+-                throw ANNException("Error: please pass initial_search_list_size for building dynamic index.", -1);
++        if (_data_type == "" || _data_type.empty()) {
++            // those changes are made to avoid exceptions in noexcept functions of KV.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // throw ANNException("Error: data_type can not be empty", -1);
++            ec = -1;
++            return {};
+         }
+ 
+-        // sanity check
+-        if (_dynamic_index && _num_frozen_pts == 0)
+-        {
+-            diskann::cout << "_num_frozen_pts passed as 0 for dynamic_index. Setting it to 1 for safety." << std::endl;
+-            _num_frozen_pts = 1;
++        if (_dynamic_index) {
++            if (_num_frozen_pts == 0) {
++                // this code is commented to avoid unnecessary prints in production products.
++                // This code is commented to replace with "define" code later - it should depends on compiler flags
++                // diskann::cout << "_num_frozen_pts passed as 0 for dynamic_index. Setting it to 1 for safety." << std::endl;
++                _num_frozen_pts = 1;
++            }
++
++            if (_index_search_params != nullptr && _index_search_params->initial_search_list_size == 0) {
++                // those changes are made to avoid exceptions in noexcept functions of KV.
++                // This code is commented to replace with "define" code later - it should depends on compiler flags
++                // throw ANNException("Error: please pass initial_search_list_size for building dynamic index.", -1);
++                ec = -2;
++                return {};
++            }
+         }
+ 
++        ec = 0;
+         return IndexConfig(_data_strategy, _graph_strategy, _metric, _dimension, _max_points, _num_pq_chunks,
+                            _num_frozen_pts, _dynamic_index, _enable_tags, _pq_dist_build, _concurrent_consolidate,
+                            _use_opq, _filtered_index, _data_type, _tag_type, _label_type, _index_write_params,
+diff --git a/include/index_factory.h b/include/index_factory.h
+index 76fb0b9..036ce8d 100644
+--- a/include/index_factory.h
++++ b/include/index_factory.h
+@@ -10,16 +10,16 @@ namespace diskann
+ class IndexFactory
+ {
+   public:
+-    DISKANN_DLLEXPORT explicit IndexFactory(const IndexConfig &config);
+-    DISKANN_DLLEXPORT std::unique_ptr<AbstractIndex> create_instance();
++    DISKANN_DLLEXPORT explicit IndexFactory(const IndexConfig &config, int& ec) noexcept;
++    DISKANN_DLLEXPORT std::unique_ptr<AbstractIndex> create_instance() noexcept;
+ 
+     DISKANN_DLLEXPORT static std::unique_ptr<AbstractGraphStore> construct_graphstore(
+-        const GraphStoreStrategy stratagy, const size_t size, const size_t reserve_graph_degree);
++        const GraphStoreStrategy stratagy, const size_t size, const size_t reserve_graph_degree) noexcept;
+ 
+     template <typename T>
+     DISKANN_DLLEXPORT static std::shared_ptr<AbstractDataStore<T>> construct_datastore(DataStoreStrategy stratagy,
+                                                                                        size_t num_points,
+-                                                                                       size_t dimension, Metric m);
++                                                                                       size_t dimension, Metric m) noexcept;
+     // For now PQDataStore incorporates within itself all variants of quantization that we support. In the
+     // future it may be necessary to introduce an AbstractPQDataStore class to spearate various quantization
+     // flavours.
+@@ -27,25 +27,26 @@ class IndexFactory
+     DISKANN_DLLEXPORT static std::shared_ptr<PQDataStore<T>> construct_pq_datastore(DataStoreStrategy strategy,
+                                                                                     size_t num_points, size_t dimension,
+                                                                                     Metric m, size_t num_pq_chunks,
+-                                                                                    bool use_opq);
+-    template <typename T> static Distance<T> *construct_inmem_distance_fn(Metric m);
++                                                                                    bool use_opq) noexcept;
++    template <typename T> static Distance<T> *construct_inmem_distance_fn(Metric m) noexcept;
+ 
+   private:
+-    void check_config();
++    void check_config() noexcept;
+ 
+     template <typename data_type, typename tag_type, typename label_type>
+-    std::unique_ptr<AbstractIndex> create_instance();
++    std::unique_ptr<AbstractIndex> create_instance() noexcept;
+ 
+     std::unique_ptr<AbstractIndex> create_instance(const std::string &data_type, const std::string &tag_type,
+-                                                   const std::string &label_type);
++                                                   const std::string &label_type) noexcept;
+ 
+     template <typename data_type>
+-    std::unique_ptr<AbstractIndex> create_instance(const std::string &tag_type, const std::string &label_type);
++    std::unique_ptr<AbstractIndex> create_instance(const std::string &tag_type, const std::string &label_type) noexcept;
+ 
+     template <typename data_type, typename tag_type>
+-    std::unique_ptr<AbstractIndex> create_instance(const std::string &label_type);
++    std::unique_ptr<AbstractIndex> create_instance(const std::string &label_type) noexcept;
+ 
+     std::unique_ptr<IndexConfig> _config;
++    int* _ec;
+ };
+ 
+ } // namespace diskann
+diff --git a/include/pq_data_store.h b/include/pq_data_store.h
+index 7c0cb5f..7589677 100644
+--- a/include/pq_data_store.h
++++ b/include/pq_data_store.h
+@@ -22,7 +22,7 @@ template <typename data_t> class PQDataStore : public AbstractDataStore<data_t>
+     // Load quantized vectors from a set of files. Here filename is treated
+     // as a prefix and the files are assumed to be named with DiskANN
+     // conventions.
+-    virtual location_t load(const std::string &file_prefix) override;
++    virtual location_t load(const std::string &file_prefix, int& ec) override;
+ 
+     // Save quantized vectors to a set of files whose names start with
+     // file_prefix.
+@@ -77,7 +77,7 @@ template <typename data_t> class PQDataStore : public AbstractDataStore<data_t>
+     virtual location_t expand(const location_t new_size) override;
+     virtual location_t shrink(const location_t new_size) override;
+ 
+-    virtual location_t load_impl(const std::string &filename);
++    virtual location_t load_impl(const std::string &filename, int& ec);
+ #ifdef EXEC_ENV_OLS
+     virtual location_t load_impl(AlignedFileReader &reader);
+ #endif
+diff --git a/include/utils.h b/include/utils.h
+index d3af5c3..8aa30e2 100644
+--- a/include/utils.h
++++ b/include/utils.h
+@@ -233,24 +233,35 @@ namespace diskann
+ {
+ static const size_t MAX_SIZE_OF_STREAMBUF = 2LL * 1024 * 1024 * 1024;
+ 
+-inline void print_error_and_terminate(std::stringstream &error_stream)
+-{
+-    diskann::cerr << error_stream.str() << std::endl;
+-    throw diskann::ANNException(error_stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
+-}
++// those changes are made to avoid exceptions in noexcept functions of KV.
++// this code is commented to avoid unnecessary prints in production products.
++// This code is commented to replace with "define" code later - it should depends on compiler flags
++// inline void print_error_and_terminate(std::stringstream &error_stream)
++// {
++//     diskann::cerr << error_stream.str() << std::endl;
++//     throw diskann::ANNException(error_stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++// }
+ 
+ inline void report_memory_allocation_failure()
+ {
+-    std::stringstream stream;
+-    stream << "Memory Allocation Failed.";
+-    print_error_and_terminate(stream);
++    // those changes are made to avoid exceptions in noexcept functions of KV.
++    // this code is commented to avoid unnecessary prints in production products.
++    // This code is commented to replace with "define" code later - it should depends on compiler flags
++    // std::stringstream stream;
++    // stream << "Memory Allocation Failed.";
++    // print_error_and_terminate(stream);
++    std::terminate();
+ }
+ 
+ inline void report_misalignment_of_requested_size(size_t align)
+ {
+-    std::stringstream stream;
+-    stream << "Requested memory size is not a multiple of " << align << ". Can not be allocated.";
+-    print_error_and_terminate(stream);
++    // those changes are made to avoid exceptions in noexcept functions of KV.
++    // this code is commented to avoid unnecessary prints in production products.
++    // This code is commented to replace with "define" code later - it should depends on compiler flags
++    // std::stringstream stream;
++    // stream << "Requested memory size is not a multiple of " << align << ". Can not be allocated.";
++    // print_error_and_terminate(stream);
++    std::terminate();
+ }
+ 
+ inline void alloc_aligned(void **ptr, size_t size, size_t align)
+@@ -267,20 +278,23 @@ inline void alloc_aligned(void **ptr, size_t size, size_t align)
+         report_memory_allocation_failure();
+ }
+ 
+-inline void realloc_aligned(void **ptr, size_t size, size_t align)
+-{
+-    if (IS_ALIGNED(size, align) == 0)
+-        report_misalignment_of_requested_size(align);
+-#ifdef _WINDOWS
+-    *ptr = ::_aligned_realloc(*ptr, size, align);
+-#else
+-    diskann::cerr << "No aligned realloc on GCC. Must malloc and mem_align, "
+-                     "left it out for now."
+-                  << std::endl;
+-#endif
+-    if (*ptr == nullptr)
+-        report_memory_allocation_failure();
+-}
++// those changes are made to avoid exceptions in noexcept functions of KV.
++// this code is commented to avoid unnecessary prints in production products.
++// This code is commented to replace with "define" code later - it should depends on compiler flags
++// inline void realloc_aligned(void **ptr, size_t size, size_t align)
++// {
++//     if (IS_ALIGNED(size, align) == 0)
++//         report_misalignment_of_requested_size(align);
++// #ifdef _WINDOWS
++//     *ptr = ::_aligned_realloc(*ptr, size, align);
++// #else
++//     diskann::cerr << "No aligned realloc on GCC. Must malloc and mem_align, "
++//                      "left it out for now."
++//                   << std::endl;
++// #endif
++//     if (*ptr == nullptr)
++//         report_memory_allocation_failure();
++// }
+ 
+ inline void check_stop(std::string arnd)
+ {
+@@ -359,26 +373,44 @@ inline void get_bin_metadata(MemoryMappedFiles &files, const std::string &bin_fi
+ inline void get_bin_metadata(const std::string &bin_file, size_t &nrows, size_t &ncols, size_t offset = 0)
+ {
+     std::ifstream reader(bin_file.c_str(), std::ios::binary);
++    if (!reader.is_open()) {
++        nrows = ncols = 0;
++        return;
++    }
+     get_bin_metadata_impl(reader, nrows, ncols, offset);
++    if (!reader.good()) {
++        nrows = ncols = 0;
++        return;
++    }
++    reader.close();
+ }
+ // get_bin_metadata functions END
+ 
+ #ifndef EXEC_ENV_OLS
+-inline size_t get_graph_num_frozen_points(const std::string &graph_file)
++inline size_t get_graph_num_frozen_points(const std::string &graph_file, int& ec) noexcept
+ {
+     size_t expected_file_size;
+     uint32_t max_observed_degree, start;
+     size_t file_frozen_pts;
+ 
+     std::ifstream in;
+-    in.exceptions(std::ios::badbit | std::ios::failbit);
+-
+     in.open(graph_file, std::ios::binary);
++    if (!in.is_open())
++    {
++        ec = -1;
++        return 0;
++    }
+     in.read((char *)&expected_file_size, sizeof(size_t));
+     in.read((char *)&max_observed_degree, sizeof(uint32_t));
+     in.read((char *)&start, sizeof(uint32_t));
+     in.read((char *)&file_frozen_pts, sizeof(size_t));
++    if (!in.good()) {
++        ec = -2;
++        return 0;
++    }
+ 
++    in.close();
++    ec = 0;
+     return file_frozen_pts;
+ }
+ #endif
+@@ -959,32 +991,46 @@ inline size_t save_data_in_base_dimensions(const std::string &filename, T *data,
+ }
+ 
+ template <typename T>
+-inline void copy_aligned_data_from_file(const char *bin_file, T *&data, size_t &npts, size_t &dim,
++inline int copy_aligned_data_from_file(const char *bin_file, T *&data, size_t &npts, size_t &dim,
+                                         const size_t &rounded_dim, size_t offset = 0)
+ {
+     if (data == nullptr)
+     {
+-        diskann::cerr << "Memory was not allocated for " << data << " before calling the load function. Exiting..."
+-                      << std::endl;
+-        throw diskann::ANNException("Null pointer passed to copy_aligned_data_from_file function", -1, __FUNCSIG__,
+-                                    __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cerr << "Memory was not allocated for " << data << " before calling the load function. Exiting..."
++        //               << std::endl;
++        // throw diskann::ANNException("Null pointer passed to copy_aligned_data_from_file function", -1, __FUNCSIG__,
++        //                             __FILE__, __LINE__);
++        return -1;
+     }
+     std::ifstream reader;
+-    reader.exceptions(std::ios::badbit | std::ios::failbit);
++    // reader.exceptions(std::ios::badbit | std::ios::failbit);
+     reader.open(bin_file, std::ios::binary);
++    if (!reader.is_open()) {
++        return -2;
++    }
+     reader.seekg(offset, reader.beg);
+ 
+     int npts_i32, dim_i32;
+     reader.read((char *)&npts_i32, sizeof(int));
+     reader.read((char *)&dim_i32, sizeof(int));
++    if (!reader.good()) {
++        return -3;
++    }
+     npts = (unsigned)npts_i32;
+     dim = (unsigned)dim_i32;
+ 
+     for (size_t i = 0; i < npts; i++)
+     {
+         reader.read((char *)(data + i * rounded_dim), dim * sizeof(T));
++        if (!reader.good()) {
++            return -3;
++        }
+         memset(data + i * rounded_dim + dim, 0, (rounded_dim - dim) * sizeof(T));
+     }
++    return 0;
+ }
+ 
+ // NOTE :: good efficiency when total_vec_size is integral multiple of 64
+diff --git a/src/abstract_index.cpp b/src/abstract_index.cpp
+index 9266582..27619dc 100644
+--- a/src/abstract_index.cpp
++++ b/src/abstract_index.cpp
+@@ -15,7 +15,7 @@ void AbstractIndex::build(const data_type *data, const size_t num_points_to_load
+ 
+ template <typename data_type, typename IDType>
+ std::pair<uint32_t, uint32_t> AbstractIndex::search(const data_type *query, const size_t K, const uint32_t L,
+-                                                    IDType *indices, float *distances)
++                                                    IDType *indices, float *distances) noexcept
+ {
+     auto any_indices = std::any(indices);
+     auto any_query = std::any(query);
+@@ -142,18 +142,18 @@ template DISKANN_DLLEXPORT void AbstractIndex::build<uint8_t, uint64_t>(const ui
+                                                                         const std::vector<uint64_t> &tags);
+ 
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> AbstractIndex::search<float, uint32_t>(
+-    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> AbstractIndex::search<uint8_t, uint32_t>(
+-    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> AbstractIndex::search<int8_t, uint32_t>(
+-    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ 
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> AbstractIndex::search<float, uint64_t>(
+-    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> AbstractIndex::search<uint8_t, uint64_t>(
+-    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> AbstractIndex::search<int8_t, uint64_t>(
+-    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ 
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> AbstractIndex::search_with_filters<uint32_t>(
+     const DataType &query, const std::string &raw_label, const size_t K, const uint32_t L, uint32_t *indices,
+diff --git a/src/distance.cpp b/src/distance.cpp
+index c2f88c8..cad2472 100644
+--- a/src/distance.cpp
++++ b/src/distance.cpp
+@@ -28,7 +28,10 @@ namespace diskann
+ template <typename T>
+ float Distance<T>::compare(const T *a, const T *b, const float normA, const float normB, uint32_t length) const
+ {
+-    throw std::logic_error("This function is not implemented.");
++    // those changes are made to avoid exceptions in noexcept functions of KV.
++    // This code is commented to replace with "define" code later - it should depends on compiler flags
++    // throw std::logic_error("This function is not implemented.");
++    std::terminate();
+ }
+ 
+ template <typename T> uint32_t Distance<T>::post_normalization_dimension(uint32_t orig_dimension) const
+@@ -302,9 +305,13 @@ template <typename T> float DistanceInnerProduct<T>::inner_product(const T *a, c
+ {
+     if (!std::is_floating_point<T>::value)
+     {
+-        diskann::cerr << "ERROR: Inner Product only defined for float currently." << std::endl;
+-        throw diskann::ANNException("ERROR: Inner Product only defined for float currently.", -1, __FUNCSIG__, __FILE__,
+-                                    __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cerr << "ERROR: Inner Product only defined for float currently." << std::endl;
++        // throw diskann::ANNException("ERROR: Inner Product only defined for float currently.", -1, __FUNCSIG__, __FILE__,
++        //                             __LINE__);
++        std::terminate();
+     }
+ 
+     float result = 0;
+@@ -422,9 +429,13 @@ template <typename T> float DistanceFastL2<T>::norm(const T *a, uint32_t size) c
+ {
+     if (!std::is_floating_point<T>::value)
+     {
+-        diskann::cerr << "ERROR: FastL2 only defined for float currently." << std::endl;
+-        throw diskann::ANNException("ERROR: FastL2 only defined for float currently.", -1, __FUNCSIG__, __FILE__,
+-                                    __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cerr << "ERROR: FastL2 only defined for float currently." << std::endl;
++        // throw diskann::ANNException("ERROR: FastL2 only defined for float currently.", -1, __FUNCSIG__, __FILE__,
++        //                             __LINE__);
++        std::terminate();
+     }
+     float result = 0;
+ #ifdef __GNUC__
+@@ -602,47 +613,63 @@ template <> diskann::Distance<float> *get_distance_function(diskann::Metric m)
+     {
+         if (Avx2SupportedCPU)
+         {
+-            diskann::cout << "L2: Using AVX2 distance computation DistanceL2Float" << std::endl;
++            // this code is commented to avoid unnecessary prints in production products.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // diskann::cout << "L2: Using AVX2 distance computation DistanceL2Float" << std::endl;
+             return new diskann::DistanceL2Float();
+         }
+         else if (AvxSupportedCPU)
+         {
+-            diskann::cout << "L2: AVX2 not supported. Using AVX distance computation" << std::endl;
++            // this code is commented to avoid unnecessary prints in production products.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // diskann::cout << "L2: AVX2 not supported. Using AVX distance computation" << std::endl;
+             return new diskann::AVXDistanceL2Float();
+         }
+         else
+         {
+-            diskann::cout << "L2: Older CPU. Using slow distance computation" << std::endl;
++            // this code is commented to avoid unnecessary prints in production products.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // diskann::cout << "L2: Older CPU. Using slow distance computation" << std::endl;
+             return new diskann::SlowDistanceL2<float>();
+         }
+     }
+     else if (m == diskann::Metric::COSINE)
+     {
+-        diskann::cout << "Cosine: Using either AVX or AVX2 implementation" << std::endl;
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cout << "Cosine: Using either AVX or AVX2 implementation" << std::endl;
+         return new diskann::DistanceCosineFloat();
+     }
+     else if (m == diskann::Metric::INNER_PRODUCT)
+     {
+-        diskann::cout << "Inner product: Using AVX2 implementation "
+-                         "AVXDistanceInnerProductFloat"
+-                      << std::endl;
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cout << "Inner product: Using AVX2 implementation "
++        //                  "AVXDistanceInnerProductFloat"
++        //               << std::endl;
+         return new diskann::AVXDistanceInnerProductFloat();
+     }
+     else if (m == diskann::Metric::FAST_L2)
+     {
+-        diskann::cout << "Fast_L2: Using AVX2 implementation with norm "
+-                         "memoization DistanceFastL2<float>"
+-                      << std::endl;
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cout << "Fast_L2: Using AVX2 implementation with norm "
++        //                  "memoization DistanceFastL2<float>"
++        //               << std::endl;
+         return new diskann::DistanceFastL2<float>();
+     }
+     else
+     {
+-        std::stringstream stream;
+-        stream << "Only L2, cosine, and inner product supported for floating "
+-                  "point vectors as of now."
+-               << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "Only L2, cosine, and inner product supported for floating "
++        //           "point vectors as of now."
++        //        << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        std::terminate();
+     }
+ }
+ 
+@@ -652,35 +679,47 @@ template <> diskann::Distance<int8_t> *get_distance_function(diskann::Metric m)
+     {
+         if (Avx2SupportedCPU)
+         {
+-            diskann::cout << "Using AVX2 distance computation DistanceL2Int8." << std::endl;
++            // this code is commented to avoid unnecessary prints in production products.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // diskann::cout << "Using AVX2 distance computation DistanceL2Int8." << std::endl;
+             return new diskann::DistanceL2Int8();
+         }
+         else if (AvxSupportedCPU)
+         {
+-            diskann::cout << "AVX2 not supported. Using AVX distance computation" << std::endl;
++            // this code is commented to avoid unnecessary prints in production products.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // diskann::cout << "AVX2 not supported. Using AVX distance computation" << std::endl;
+             return new diskann::AVXDistanceL2Int8();
+         }
+         else
+         {
+-            diskann::cout << "Older CPU. Using slow distance computation "
+-                             "SlowDistanceL2Int<int8_t>."
+-                          << std::endl;
++            // this code is commented to avoid unnecessary prints in production products.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // diskann::cout << "Older CPU. Using slow distance computation "
++            //                  "SlowDistanceL2Int<int8_t>."
++            //               << std::endl;
+             return new diskann::SlowDistanceL2<int8_t>();
+         }
+     }
+     else if (m == diskann::Metric::COSINE)
+     {
+-        diskann::cout << "Using either AVX or AVX2 for Cosine similarity "
+-                         "DistanceCosineInt8."
+-                      << std::endl;
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cout << "Using either AVX or AVX2 for Cosine similarity "
++        //                  "DistanceCosineInt8."
++        //               << std::endl;
+         return new diskann::DistanceCosineInt8();
+     }
+     else
+     {
+-        std::stringstream stream;
+-        stream << "Only L2 and cosine supported for signed byte vectors." << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "Only L2 and cosine supported for signed byte vectors." << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        std::terminate();
+     }
+ }
+ 
+@@ -699,18 +738,24 @@ template <> diskann::Distance<uint8_t> *get_distance_function(diskann::Metric m)
+     }
+     else if (m == diskann::Metric::COSINE)
+     {
+-        diskann::cout << "AVX/AVX2 distance function not defined for Uint8. Using "
+-                         "slow version SlowDistanceCosineUint8() "
+-                         "Contact gopalsr@microsoft.com if you need AVX/AVX2 support."
+-                      << std::endl;
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cout << "AVX/AVX2 distance function not defined for Uint8. Using "
++        //                  "slow version SlowDistanceCosineUint8() "
++        //                  "Contact gopalsr@microsoft.com if you need AVX/AVX2 support."
++        //               << std::endl;
+         return new diskann::SlowDistanceCosineUInt8();
+     }
+     else
+     {
+-        std::stringstream stream;
+-        stream << "Only L2 and cosine supported for uint32_t byte vectors." << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "Only L2 and cosine supported for uint32_t byte vectors." << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        std::terminate();
+     }
+ }
+ 
+diff --git a/src/in_mem_data_store.cpp b/src/in_mem_data_store.cpp
+index cc7acf6..7e46243 100644
+--- a/src/in_mem_data_store.cpp
++++ b/src/in_mem_data_store.cpp
+@@ -38,9 +38,9 @@ template <typename data_t> size_t InMemDataStore<data_t>::get_alignment_factor()
+     return _distance_fn->get_required_alignment();
+ }
+ 
+-template <typename data_t> location_t InMemDataStore<data_t>::load(const std::string &filename)
++template <typename data_t> location_t InMemDataStore<data_t>::load(const std::string &filename, int& ec)
+ {
+-    return load_impl(filename);
++    return load_impl(filename, ec);
+ }
+ 
+ #ifdef EXEC_ENV_OLS
+@@ -70,27 +70,41 @@ template <typename data_t> location_t InMemDataStore<data_t>::load_impl(AlignedF
+ }
+ #endif
+ 
+-template <typename data_t> location_t InMemDataStore<data_t>::load_impl(const std::string &filename)
++template <typename data_t> location_t InMemDataStore<data_t>::load_impl(const std::string &filename, int& ec)
+ {
+     size_t file_dim, file_num_points;
+     if (!file_exists(filename))
+     {
+-        std::stringstream stream;
+-        stream << "ERROR: data file " << filename << " does not exist." << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "ERROR: data file " << filename << " does not exist." << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
+         aligned_free(_data);
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        ec = -201;
++        return 0;
+     }
+     diskann::get_bin_metadata(filename, file_num_points, file_dim);
++    if (file_num_points == file_dim && file_dim == 0) {
++        ec = -202;
++        return 0;
++    }
+ 
+     if (file_dim != this->_dim)
+     {
+-        std::stringstream stream;
+-        stream << "ERROR: Driver requests loading " << this->_dim << " dimension,"
+-               << "but file has " << file_dim << " dimension." << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "ERROR: Driver requests loading " << this->_dim << " dimension,"
++        //        << "but file has " << file_dim << " dimension." << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
+         aligned_free(_data);
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        ec = -203;
++        return 0;
+     }
+ 
+     if (file_num_points > this->capacity())
+@@ -98,7 +112,11 @@ template <typename data_t> location_t InMemDataStore<data_t>::load_impl(const st
+         this->resize((location_t)file_num_points);
+     }
+ 
+-    copy_aligned_data_from_file<data_t>(filename.c_str(), _data, file_num_points, file_dim, _aligned_dim);
++    auto status = copy_aligned_data_from_file<data_t>(filename.c_str(), _data, file_num_points, file_dim, _aligned_dim);
++    if (status != 0) {
++        ec = status - 210;
++        return 0;
++    }
+ 
+     return (location_t)file_num_points;
+ }
+@@ -125,7 +143,7 @@ template <typename data_t> void InMemDataStore<data_t>::populate_data(const data
+ template <typename data_t> void InMemDataStore<data_t>::populate_data(const std::string &filename, const size_t offset)
+ {
+     size_t npts, ndim;
+-    copy_aligned_data_from_file(filename.c_str(), _data, npts, ndim, _aligned_dim, offset);
++    copy_aligned_data_from_file(filename.c_str(), _data, npts, ndim, _aligned_dim, offset); // need to check == 0
+ 
+     if ((location_t)npts > this->capacity())
+     {
+@@ -237,10 +255,14 @@ template <typename data_t> location_t InMemDataStore<data_t>::expand(const locat
+     }
+     else if (new_size < this->capacity())
+     {
+-        std::stringstream ss;
+-        ss << "Cannot 'expand' datastore when new capacity (" << new_size << ") < existing capacity("
+-           << this->capacity() << ")" << std::endl;
+-        throw diskann::ANNException(ss.str(), -1);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream ss;
++        // ss << "Cannot 'expand' datastore when new capacity (" << new_size << ") < existing capacity("
++        //    << this->capacity() << ")" << std::endl;
++        // throw diskann::ANNException(ss.str(), -1);
++        std::terminate();
+     }
+ #ifndef _WINDOWS
+     data_t *new_data;
+@@ -263,10 +285,14 @@ template <typename data_t> location_t InMemDataStore<data_t>::shrink(const locat
+     }
+     else if (new_size > this->capacity())
+     {
+-        std::stringstream ss;
+-        ss << "Cannot 'shrink' datastore when new capacity (" << new_size << ") > existing capacity("
+-           << this->capacity() << ")" << std::endl;
+-        throw diskann::ANNException(ss.str(), -1);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream ss;
++        // ss << "Cannot 'shrink' datastore when new capacity (" << new_size << ") > existing capacity("
++        //    << this->capacity() << ")" << std::endl;
++        // throw diskann::ANNException(ss.str(), -1);
++        std::terminate();
+     }
+ #ifndef _WINDOWS
+     data_t *new_data;
+diff --git a/src/in_mem_graph_store.cpp b/src/in_mem_graph_store.cpp
+index c12b251..45f015b 100644
+--- a/src/in_mem_graph_store.cpp
++++ b/src/in_mem_graph_store.cpp
+@@ -17,9 +17,9 @@ InMemGraphStore::InMemGraphStore(const size_t total_pts, const size_t reserve_gr
+ }
+ 
+ std::tuple<uint32_t, uint32_t, size_t> InMemGraphStore::load(const std::string &index_path_prefix,
+-                                                             const size_t num_points)
++                                                             const size_t num_points, int& ec)
+ {
+-    return load_impl(index_path_prefix, num_points);
++    return load_impl(index_path_prefix, num_points, ec);
+ }
+ int InMemGraphStore::store(const std::string &index_path_prefix, const size_t num_points,
+                            const size_t num_frozen_points, const uint32_t start)
+@@ -133,7 +133,7 @@ std::tuple<uint32_t, uint32_t, size_t> InMemGraphStore::load_impl(AlignedFileRea
+ #endif
+ 
+ std::tuple<uint32_t, uint32_t, size_t> InMemGraphStore::load_impl(const std::string &filename,
+-                                                                  size_t expected_num_points)
++                                                                  size_t expected_num_points, int& ec)
+ {
+     size_t expected_file_size;
+     size_t file_frozen_pts;
+@@ -141,26 +141,38 @@ std::tuple<uint32_t, uint32_t, size_t> InMemGraphStore::load_impl(const std::str
+     size_t file_offset = 0; // will need this for single file format support
+ 
+     std::ifstream in;
+-    in.exceptions(std::ios::badbit | std::ios::failbit);
++    // in.exceptions(std::ios::badbit | std::ios::failbit);
+     in.open(filename, std::ios::binary);
++    if (in.is_open() == false)
++    {
++        ec = -101;
++        return std::make_tuple(0, 0, 0);
++    }
+     in.seekg(file_offset, in.beg);
+     in.read((char *)&expected_file_size, sizeof(size_t));
+     in.read((char *)&_max_observed_degree, sizeof(uint32_t));
+     in.read((char *)&start, sizeof(uint32_t));
+     in.read((char *)&file_frozen_pts, sizeof(size_t));
++    if (!in.good()) {
++        ec = -102;
++        return std::make_tuple(0, 0, 0);
++    }
+     size_t vamana_metadata_size = sizeof(size_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(size_t);
+ 
+-    diskann::cout << "From graph header, expected_file_size: " << expected_file_size
+-                  << ", _max_observed_degree: " << _max_observed_degree << ", _start: " << start
+-                  << ", file_frozen_pts: " << file_frozen_pts << std::endl;
++    // this code is commented to avoid unnecessary prints in production products.
++    // This code is commented to replace with "define" code later - it should depends on compiler flags
+ 
+-    diskann::cout << "Loading vamana graph " << filename << "..." << std::flush;
++    // diskann::cout << "From graph header, expected_file_size: " << expected_file_size
++    //               << ", _max_observed_degree: " << _max_observed_degree << ", _start: " << start
++    //               << ", file_frozen_pts: " << file_frozen_pts << std::endl;
++
++    // diskann::cout << "Loading vamana graph " << filename << "..." << std::flush;
+ 
+     // If user provides more points than max_points
+     // resize the _graph to the larger size.
+     if (get_total_points() < expected_num_points)
+     {
+-        diskann::cout << "resizing graph to " << expected_num_points << std::endl;
++        // diskann::cout << "resizing graph to " << expected_num_points << std::endl;
+         this->resize_graph(expected_num_points);
+     }
+ 
+@@ -171,29 +183,42 @@ std::tuple<uint32_t, uint32_t, size_t> InMemGraphStore::load_impl(const std::str
+     {
+         uint32_t k;
+         in.read((char *)&k, sizeof(uint32_t));
+-
+-        if (k == 0)
+-        {
+-            diskann::cerr << "ERROR: Point found with no out-neighbours, point#" << nodes_read << std::endl;
++        if (!in.good()) {
++            ec = -102;
++            return std::make_tuple(0, 0, 0);
+         }
+ 
++
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // if (k == 0)
++        // {
++        //     diskann::cerr << "ERROR: Point found with no out-neighbours, point#" << nodes_read << std::endl;
++        // }
++
+         cc += k;
+         ++nodes_read;
+         std::vector<uint32_t> tmp(k);
+         tmp.reserve(k);
+         in.read((char *)tmp.data(), k * sizeof(uint32_t));
++        if (!in.good()) {
++            ec = -102;
++            return std::make_tuple(0, 0, 0);
++        }
+         _graph[nodes_read - 1].swap(tmp);
+         bytes_read += sizeof(uint32_t) * ((size_t)k + 1);
+-        if (nodes_read % 10000000 == 0)
+-            diskann::cout << "." << std::flush;
++        // if (nodes_read % 10000000 == 0)
++        //     diskann::cout << "." << std::flush;
+         if (k > _max_range_of_graph)
+         {
+             _max_range_of_graph = k;
+         }
+     }
+ 
+-    diskann::cout << "done. Index has " << nodes_read << " nodes and " << cc << " out-edges, _start is set to " << start
+-                  << std::endl;
++    // this code is commented to avoid unnecessary prints in production products.
++    // This code is commented to replace with "define" code later - it should depends on compiler flags
++    // diskann::cout << "done. Index has " << nodes_read << " nodes and " << cc << " out-edges, _start is set to " << start
++    //               << std::endl;
+     return std::make_tuple(nodes_read, start, file_frozen_pts);
+ }
+ 
+diff --git a/src/index.cpp b/src/index.cpp
+index c323870..9ecf046 100644
+--- a/src/index.cpp
++++ b/src/index.cpp
+@@ -25,6 +25,8 @@
+ 
+ #define MAX_POINTS_FOR_USING_BITSET 10000000
+ 
++int unused_filling_value;
++
+ namespace diskann
+ {
+ // Initialize an index with metric m, load the data of type T with filename
+@@ -42,20 +44,27 @@ Index<T, TagT, LabelT>::Index(const IndexConfig &index_config, std::shared_ptr<A
+ {
+     if (_dynamic_index && !_enable_tags)
+     {
+-        throw ANNException("ERROR: Dynamic Indexing must have tags enabled.", -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // throw ANNException("ERROR: Dynamic Indexing must have tags enabled.", -1, __FUNCSIG__, __FILE__, __LINE__);
++        std::terminate();
+     }
+ 
+     if (_pq_dist)
+     {
+-        if (_dynamic_index)
+-            throw ANNException("ERROR: Dynamic Indexing not supported with PQ distance based "
+-                               "index construction",
+-                               -1, __FUNCSIG__, __FILE__, __LINE__);
+-        if (_dist_metric == diskann::Metric::INNER_PRODUCT)
+-            throw ANNException("ERROR: Inner product metrics not yet supported "
+-                               "with PQ distance "
+-                               "base index",
+-                               -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are only for KV compile, where is no support of pq_dist flag.
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // if (_dynamic_index)
++        //     throw ANNException("ERROR: Dynamic Indexing not supported with PQ distance based "
++        //                        "index construction",
++        //                        -1, __FUNCSIG__, __FILE__, __LINE__);
++        // if (_dist_metric == diskann::Metric::INNER_PRODUCT)
++        //     throw ANNException("ERROR: Inner product metrics not yet supported "
++        //                        "with PQ distance "
++        //                        "base index",
++        //                        -1, __FUNCSIG__, __FILE__, __LINE__);
++        std::terminate();
+     }
+ 
+     if (_dynamic_index && _num_frozen_pts == 0)
+@@ -134,7 +143,7 @@ Index<T, TagT, LabelT>::Index(Metric m, const size_t dim, const size_t max_point
+               .is_use_opq(use_opq)
+               .is_filtered(filtered_index)
+               .with_data_type(diskann_type_to_name<T>())
+-              .build(),
++              .build(unused_filling_value),
+           IndexFactory::construct_datastore<T>(DataStoreStrategy::MEMORY,
+                                                (max_points == 0 ? (size_t)1 : max_points) +
+                                                    (dynamic_index && num_frozen_pts == 0 ? (size_t)1 : num_frozen_pts),
+@@ -455,7 +464,7 @@ template <typename T, typename TagT, typename LabelT>
+ size_t Index<T, TagT, LabelT>::load_data(AlignedFileReader &reader)
+ {
+ #else
+-size_t Index<T, TagT, LabelT>::load_data(std::string filename)
++size_t Index<T, TagT, LabelT>::load_data(std::string filename, int& ec)
+ {
+ #endif
+     size_t file_dim, file_num_points;
+@@ -464,12 +473,21 @@ size_t Index<T, TagT, LabelT>::load_data(std::string filename)
+ #else
+     if (!file_exists(filename))
+     {
+-        std::stringstream stream;
+-        stream << "ERROR: data file " << filename << " does not exist." << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "ERROR: data file " << filename << " does not exist." << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        ec = -1;
++        return 0;
+     }
+     diskann::get_bin_metadata(filename, file_num_points, file_dim);
++    if (file_num_points == file_dim && file_dim == 0) {
++        ec = -2;
++        return 0;
++    }
+ #endif
+ 
+     // since we are loading a new dataset, _empty_slots must be cleared
+@@ -477,11 +495,16 @@ size_t Index<T, TagT, LabelT>::load_data(std::string filename)
+ 
+     if (file_dim != _dim)
+     {
+-        std::stringstream stream;
+-        stream << "ERROR: Driver requests loading " << _dim << " dimension,"
+-               << "but file has " << file_dim << " dimension." << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "ERROR: Driver requests loading " << _dim << " dimension,"
++        //        << "but file has " << file_dim << " dimension." << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        ec = -3;
++        return 0;
+     }
+ 
+     if (file_num_points > _max_points + _num_frozen_pts)
+@@ -495,7 +518,7 @@ size_t Index<T, TagT, LabelT>::load_data(std::string filename)
+     // manner.
+     copy_aligned_data_from_file<T>(reader, _data, file_num_points, file_dim, _data_store->get_aligned_dim());
+ #else
+-    _data_store->load(filename); // offset == 0.
++    _data_store->load(filename, ec); // offset == 0.
+ #endif
+     return file_num_points;
+ }
+@@ -532,7 +555,7 @@ template <typename T, typename TagT, typename LabelT>
+ void Index<T, TagT, LabelT>::load(AlignedFileReader &reader, uint32_t num_threads, uint32_t search_l)
+ {
+ #else
+-void Index<T, TagT, LabelT>::load(const char *filename, uint32_t num_threads, uint32_t search_l)
++void Index<T, TagT, LabelT>::load(const char *filename, uint32_t num_threads, uint32_t search_l, int& ec) noexcept
+ {
+ #endif
+     std::unique_lock<std::shared_timed_mutex> ul(_update_lock);
+@@ -558,7 +581,11 @@ void Index<T, TagT, LabelT>::load(const char *filename, uint32_t num_threads, ui
+         std::string tags_file = std::string(filename) + ".tags";
+         std::string delete_set_file = std::string(filename) + ".del";
+         std::string graph_file = std::string(filename);
+-        data_file_num_pts = load_data(data_file);
++        data_file_num_pts = load_data(data_file, ec);
++        if (ec != 0)
++        {
++            return;
++        }
+         if (file_exists(delete_set_file))
+         {
+             load_delete_set(delete_set_file);
+@@ -567,25 +594,37 @@ void Index<T, TagT, LabelT>::load(const char *filename, uint32_t num_threads, ui
+         {
+             tags_file_num_pts = load_tags(tags_file);
+         }
+-        graph_num_pts = load_graph(graph_file, data_file_num_pts);
++        graph_num_pts = load_graph(graph_file, data_file_num_pts, ec);
++        if (ec != 0)
++        {
++            return;
++        }
+ #endif
+     }
+     else
+     {
+-        diskann::cout << "Single index file saving/loading support not yet "
+-                         "enabled. Not loading the index."
+-                      << std::endl;
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // diskann::cout << "Single index file saving/loading support not yet "
++        //                  "enabled. Not loading the index."
++        //               << std::endl;
++        ec = -1000;
+         return;
+     }
+ 
+     if (data_file_num_pts != graph_num_pts || (data_file_num_pts != tags_file_num_pts && _enable_tags))
+     {
+-        std::stringstream stream;
+-        stream << "ERROR: When loading index, loaded " << data_file_num_pts << " points from datafile, "
+-               << graph_num_pts << " from graph, and " << tags_file_num_pts
+-               << " tags, with num_frozen_pts being set to " << _num_frozen_pts << " in constructor." << std::endl;
+-        diskann::cerr << stream.str() << std::endl;
+-        throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // this code is commented to avoid unnecessary prints in production products.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // std::stringstream stream;
++        // stream << "ERROR: When loading index, loaded " << data_file_num_pts << " points from datafile, "
++        //        << graph_num_pts << " from graph, and " << tags_file_num_pts
++        //        << " tags, with num_frozen_pts being set to " << _num_frozen_pts << " in constructor." << std::endl;
++        // diskann::cerr << stream.str() << std::endl;
++        // throw diskann::ANNException(stream.str(), -1, __FUNCSIG__, __FILE__, __LINE__);
++        ec = -1001;
++        return;
+     }
+ 
+     if (file_exists(labels_file))
+@@ -643,10 +682,12 @@ void Index<T, TagT, LabelT>::load(const char *filename, uint32_t num_threads, ui
+     }
+ 
+     reposition_frozen_point_to_end();
+-    diskann::cout << "Num frozen points:" << _num_frozen_pts << " _nd: " << _nd << " _start: " << _start
+-                  << " size(_location_to_tag): " << _location_to_tag.size()
+-                  << " size(_tag_to_location):" << _tag_to_location.size() << " Max points: " << _max_points
+-                  << std::endl;
++    // this code is commented to avoid unnecessary prints in production products.
++    // This code is commented to replace with "define" code later - it should depends on compiler flags
++    // diskann::cout << "Num frozen points:" << _num_frozen_pts << " _nd: " << _nd << " _start: " << _start
++    //               << " size(_location_to_tag): " << _location_to_tag.size()
++    //               << " size(_tag_to_location):" << _tag_to_location.size() << " Max points: " << _max_points
++    //               << std::endl;
+ 
+     // For incremental index, _query_scratch is initialized in the constructor.
+     // For the bulk index, the params required to initialize _query_scratch
+@@ -657,6 +698,7 @@ void Index<T, TagT, LabelT>::load(const char *filename, uint32_t num_threads, ui
+         initialize_query_scratch(num_threads, search_l, search_l, (uint32_t)_graph_store->get_max_range_of_graph(),
+                                  _indexingMaxC, _dim);
+     }
++    ec = 0;
+ }
+ 
+ #ifndef EXEC_ENV_OLS
+@@ -687,10 +729,13 @@ size_t Index<T, TagT, LabelT>::load_graph(AlignedFileReader &reader, size_t expe
+ #else
+ 
+ template <typename T, typename TagT, typename LabelT>
+-size_t Index<T, TagT, LabelT>::load_graph(std::string filename, size_t expected_num_points)
++size_t Index<T, TagT, LabelT>::load_graph(std::string filename, size_t expected_num_points, int& ec)
+ {
+ #endif
+-    auto res = _graph_store->load(filename, expected_num_points);
++    auto res = _graph_store->load(filename, expected_num_points, ec);
++    if (ec != 0) {
++        return 0;
++    }
+     _start = std::get<1>(res);
+     _num_frozen_pts = std::get<2>(res);
+     return std::get<0>(res);
+@@ -1925,7 +1970,7 @@ void Index<T, TagT, LabelT>::build_filtered_index(const char *filename, const st
+ 
+ template <typename T, typename TagT, typename LabelT>
+ std::pair<uint32_t, uint32_t> Index<T, TagT, LabelT>::_search(const DataType &query, const size_t K, const uint32_t L,
+-                                                              std::any &indices, float *distances)
++                                                              std::any &indices, float *distances) noexcept
+ {
+     try
+     {
+@@ -1958,7 +2003,7 @@ std::pair<uint32_t, uint32_t> Index<T, TagT, LabelT>::_search(const DataType &qu
+ template <typename T, typename TagT, typename LabelT>
+ template <typename IdType>
+ std::pair<uint32_t, uint32_t> Index<T, TagT, LabelT>::search(const T *query, const size_t K, const uint32_t L,
+-                                                             IdType *indices, float *distances)
++                                                             IdType *indices, float *distances) noexcept
+ {
+     if (K > (uint64_t)L)
+     {
+@@ -2809,7 +2854,9 @@ template <typename T, typename TagT, typename LabelT> void Index<T, TagT, LabelT
+     }
+ 
+     auto stop = std::chrono::high_resolution_clock::now();
+-    diskann::cout << "Resizing took: " << std::chrono::duration<double>(stop - start).count() << "s" << std::endl;
++    // this code is commented to avoid unnecessary prints in production products.
++    // This code is commented to replace with "define" code later - it should depends on compiler flags
++    // diskann::cout << "Resizing took: " << std::chrono::duration<double>(stop - start).count() << "s" << std::endl;
+ }
+ 
+ template <typename T, typename TagT, typename LabelT>
+@@ -3419,30 +3466,30 @@ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<int8_t, uint32_t,
+               float *distances);
+ 
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<float, uint64_t, uint16_t>::search<uint64_t>(
+-    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<float, uint64_t, uint16_t>::search<uint32_t>(
+-    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<uint8_t, uint64_t, uint16_t>::search<uint64_t>(
+-    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<uint8_t, uint64_t, uint16_t>::search<uint32_t>(
+-    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<int8_t, uint64_t, uint16_t>::search<uint64_t>(
+-    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<int8_t, uint64_t, uint16_t>::search<uint32_t>(
+-    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ // TagT==uint32_t
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<float, uint32_t, uint16_t>::search<uint64_t>(
+-    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<float, uint32_t, uint16_t>::search<uint32_t>(
+-    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<uint8_t, uint32_t, uint16_t>::search<uint64_t>(
+-    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<uint8_t, uint32_t, uint16_t>::search<uint32_t>(
+-    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<int8_t, uint32_t, uint16_t>::search<uint64_t>(
+-    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
++    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances) noexcept;
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<int8_t, uint32_t, uint16_t>::search<uint32_t>(
+-    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
++    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances) noexcept;
+ 
+ template DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> Index<float, uint64_t, uint16_t>::search_with_filters<
+     uint64_t>(const float *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
+diff --git a/src/index_factory.cpp b/src/index_factory.cpp
+index 35790f8..27168e8 100644
+--- a/src/index_factory.cpp
++++ b/src/index_factory.cpp
+@@ -4,53 +4,71 @@
+ namespace diskann
+ {
+ 
+-IndexFactory::IndexFactory(const IndexConfig &config) : _config(std::make_unique<IndexConfig>(config))
++IndexFactory::IndexFactory(const IndexConfig &config, int& ec) noexcept
++    : _config(std::make_unique<IndexConfig>(config))
++    , _ec(&ec)
+ {
+     check_config();
+ }
+ 
+-std::unique_ptr<AbstractIndex> IndexFactory::create_instance()
++std::unique_ptr<AbstractIndex> IndexFactory::create_instance() noexcept
+ {
+     return create_instance(_config->data_type, _config->tag_type, _config->label_type);
+ }
+ 
+-void IndexFactory::check_config()
++void IndexFactory::check_config() noexcept
+ {
+     if (_config->dynamic_index && !_config->enable_tags)
+     {
+-        throw ANNException("ERROR: Dynamic Indexing must have tags enabled.", -1, __FUNCSIG__, __FILE__, __LINE__);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // throw ANNException("ERROR: Dynamic Indexing must have tags enabled.", -1, __FUNCSIG__, __FILE__, __LINE__);
++        *_ec = -1;
++        return;
+     }
+ 
+     if (_config->pq_dist_build)
+     {
+-        if (_config->dynamic_index)
+-            throw ANNException("ERROR: Dynamic Indexing not supported with PQ distance based "
+-                               "index construction",
+-                               -1, __FUNCSIG__, __FILE__, __LINE__);
+-        if (_config->metric == diskann::Metric::INNER_PRODUCT)
+-            throw ANNException("ERROR: Inner product metrics not yet supported "
+-                               "with PQ distance "
+-                               "base index",
+-                               -1, __FUNCSIG__, __FILE__, __LINE__);
++        if (_config->dynamic_index) {
++            
++            // those changes are made to avoid exceptions in noexcept functions of KV.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // throw ANNException("ERROR: Dynamic Indexing not supported with PQ distance based index construction", -1, __FUNCSIG__, __FILE__, __LINE__);
++            *_ec = -2;
++            return;
++        }
++        if (_config->metric == diskann::Metric::INNER_PRODUCT) {
++            // those changes are made to avoid exceptions in noexcept functions of KV.
++            // This code is commented to replace with "define" code later - it should depends on compiler flags
++            // throw ANNException("ERROR: Inner product metrics not yet supported with PQ distance base index", -1, __FUNCSIG__, __FILE__, __LINE__);
++            *_ec = -3;
++            return;
++        }
++            
+     }
+ 
+     if (_config->data_type != "float" && _config->data_type != "uint8" && _config->data_type != "int8")
+     {
+-        throw ANNException("ERROR: invalid data type : + " + _config->data_type +
+-                               " is not supported. please select from [float, int8, uint8]",
+-                           -1);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // throw ANNException("ERROR: invalid data type : + " + _config->data_type + " is not supported. please select from [float, int8, uint8]", -1);
++        *_ec = -4;
++        return;
+     }
+ 
+     if (_config->tag_type != "int32" && _config->tag_type != "uint32" && _config->tag_type != "int64" &&
+         _config->tag_type != "uint64")
+     {
+-        throw ANNException("ERROR: invalid data type : + " + _config->tag_type +
+-                               " is not supported. please select from [int32, uint32, int64, uint64]",
+-                           -1);
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // throw ANNException("ERROR: invalid data type : + " + _config->tag_type + " is not supported. please select from [int32, uint32, int64, uint64]", -1);
++        *_ec = -5;
++        return;
+     }
++    *_ec = 0;
+ }
+ 
+-template <typename T> Distance<T> *IndexFactory::construct_inmem_distance_fn(Metric metric)
++template <typename T> Distance<T> *IndexFactory::construct_inmem_distance_fn(Metric metric) noexcept
+ {
+     if (metric == diskann::Metric::COSINE && std::is_same<T, float>::value)
+     {
+@@ -65,7 +83,7 @@ template <typename T> Distance<T> *IndexFactory::construct_inmem_distance_fn(Met
+ template <typename T>
+ std::shared_ptr<AbstractDataStore<T>> IndexFactory::construct_datastore(DataStoreStrategy strategy,
+                                                                         size_t total_internal_points, size_t dimension,
+-                                                                        Metric metric)
++                                                                        Metric metric) noexcept
+ {
+     std::unique_ptr<Distance<T>> distance;
+     switch (strategy)
+@@ -75,28 +93,30 @@ std::shared_ptr<AbstractDataStore<T>> IndexFactory::construct_datastore(DataStor
+         return std::make_shared<diskann::InMemDataStore<T>>((location_t)total_internal_points, dimension,
+                                                             std::move(distance));
+     default:
+-        break;
++        // not implemented
++        return nullptr;
+     }
+-    return nullptr;
+ }
+ 
+ std::unique_ptr<AbstractGraphStore> IndexFactory::construct_graphstore(const GraphStoreStrategy strategy,
+                                                                        const size_t size,
+-                                                                       const size_t reserve_graph_degree)
++                                                                       const size_t reserve_graph_degree) noexcept
+ {
+     switch (strategy)
+     {
+     case GraphStoreStrategy::MEMORY:
+         return std::make_unique<InMemGraphStore>(size, reserve_graph_degree);
+     default:
+-        throw ANNException("Error : Current GraphStoreStratagy is not supported.", -1);
++        // not implemented
++        // throw ANNException("Error : Current GraphStoreStratagy is not supported.", -1);
++        return nullptr;
+     }
+ }
+ 
+ template <typename T>
+ std::shared_ptr<PQDataStore<T>> IndexFactory::construct_pq_datastore(DataStoreStrategy strategy, size_t num_points,
+                                                                      size_t dimension, Metric m, size_t num_pq_chunks,
+-                                                                     bool use_opq)
++                                                                     bool use_opq) noexcept
+ {
+     std::unique_ptr<Distance<T>> distance_fn;
+     std::unique_ptr<QuantizedDistance<T>> quantized_distance_fn;
+@@ -109,14 +129,14 @@ std::shared_ptr<PQDataStore<T>> IndexFactory::construct_pq_datastore(DataStoreSt
+         return std::make_shared<diskann::PQDataStore<T>>(dimension, (location_t)(num_points), num_pq_chunks,
+                                                          std::move(distance_fn), std::move(quantized_distance_fn));
+     default:
++        // not implemented
+         // REFACTOR TODO: We do support diskPQ - so we may need to add a new class for SSDPQDataStore!
+-        break;
++        return nullptr;
+     }
+-    return nullptr;
+ }
+ 
+ template <typename data_type, typename tag_type, typename label_type>
+-std::unique_ptr<AbstractIndex> IndexFactory::create_instance()
++std::unique_ptr<AbstractIndex> IndexFactory::create_instance() noexcept
+ {
+     size_t num_points = _config->max_points + _config->num_frozen_pts;
+     size_t dim = _config->dimension;
+@@ -126,6 +146,7 @@ std::unique_ptr<AbstractIndex> IndexFactory::create_instance()
+ 
+     if (_config->data_strategy == DataStoreStrategy::MEMORY && _config->pq_dist_build)
+     {
++        // comment for paratee KV development for future - we call with pq_dist_build=false
+         pq_data_store =
+             construct_pq_datastore<data_type>(_config->data_strategy, num_points + _config->num_frozen_pts, dim,
+                                               _config->metric, _config->num_pq_chunks, _config->use_opq);
+@@ -140,6 +161,12 @@ std::unique_ptr<AbstractIndex> IndexFactory::create_instance()
+     std::unique_ptr<AbstractGraphStore> graph_store =
+         construct_graphstore(_config->graph_strategy, num_points + _config->num_frozen_pts, max_reserve_degree);
+ 
++    if (pq_data_store == nullptr || data_store == nullptr || graph_store == nullptr)
++    {
++        *_ec = -10;
++        return nullptr;
++    }
++
+     // REFACTOR TODO: Must construct in-memory PQDatastore if strategy == ONDISK and must construct
+     // in-mem and on-disk PQDataStore if strategy == ONDISK and diskPQ is required.
+     return std::make_unique<diskann::Index<data_type, tag_type, label_type>>(*_config, data_store,
+@@ -147,7 +174,7 @@ std::unique_ptr<AbstractIndex> IndexFactory::create_instance()
+ }
+ 
+ std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &data_type, const std::string &tag_type,
+-                                                             const std::string &label_type)
++                                                             const std::string &label_type) noexcept
+ {
+     if (data_type == std::string("float"))
+     {
+@@ -162,11 +189,17 @@ std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &
+         return create_instance<int8_t>(tag_type, label_type);
+     }
+     else
+-        throw ANNException("Error: unsupported data_type please choose from [float/int8/uint8]", -1);
++    {
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // throw ANNException("Error: unsupported data_type please choose from [float/int8/uint8]", -1);
++        *_ec = -6;
++        return nullptr;
++    }
+ }
+ 
+ template <typename data_type>
+-std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &tag_type, const std::string &label_type)
++std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &tag_type, const std::string &label_type) noexcept
+ {
+     if (tag_type == std::string("int32"))
+     {
+@@ -185,11 +218,17 @@ std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &
+         return create_instance<data_type, uint64_t>(label_type);
+     }
+     else
+-        throw ANNException("Error: unsupported tag_type please choose from [int32/uint32/int64/uint64]", -1);
++    {
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // throw ANNException("Error: unsupported tag_type please choose from [int32/uint32/int64/uint64]", -1);
++        *_ec = -7;
++        return nullptr;
++    }
+ }
+ 
+ template <typename data_type, typename tag_type>
+-std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &label_type)
++std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &label_type) noexcept
+ {
+     if (label_type == std::string("uint16") || label_type == std::string("ushort"))
+     {
+@@ -200,7 +239,13 @@ std::unique_ptr<AbstractIndex> IndexFactory::create_instance(const std::string &
+         return create_instance<data_type, tag_type, uint32_t>();
+     }
+     else
+-        throw ANNException("Error: unsupported label_type please choose from [uint/ushort]", -1);
++    {
++        // those changes are made to avoid exceptions in noexcept functions of KV.
++        // This code is commented to replace with "define" code later - it should depends on compiler flags
++        // throw ANNException("Error: unsupported label_type please choose from [uint/ushort]", -1);
++        *_ec = -8;
++        return nullptr;
++    }
+ }
+ 
+ // template DISKANN_DLLEXPORT std::shared_ptr<AbstractDataStore<uint8_t>> IndexFactory::construct_datastore(
+diff --git a/src/pq_data_store.cpp b/src/pq_data_store.cpp
+index c47c167..f94be72 100644
+--- a/src/pq_data_store.cpp
++++ b/src/pq_data_store.cpp
+@@ -35,9 +35,9 @@ template <typename data_t> PQDataStore<data_t>::~PQDataStore()
+     }
+ }
+ 
+-template <typename data_t> location_t PQDataStore<data_t>::load(const std::string &filename)
++template <typename data_t> location_t PQDataStore<data_t>::load(const std::string &filename, int& ec)
+ {
+-    return load_impl(filename);
++    return load_impl(filename, ec);
+ }
+ template <typename data_t> size_t PQDataStore<data_t>::save(const std::string &filename, const location_t num_points)
+ {
+@@ -219,7 +219,7 @@ template <typename data_t> Distance<data_t> *PQDataStore<data_t>::get_dist_fn()
+     return _distance_fn.get();
+ }
+ 
+-template <typename data_t> location_t PQDataStore<data_t>::load_impl(const std::string &file_prefix)
++template <typename data_t> location_t PQDataStore<data_t>::load_impl(const std::string &file_prefix, int& ec)
+ {
+     if (_quantized_data != nullptr)
+     {

@@ -1,0 +1,214 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "delta_record_reader",
+    hdrs = ["delta_record_reader.h"],
+    deps = [
+        "//public/data_loading:record_utils",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "riegeli_stream_io",
+    hdrs = ["riegeli_stream_io.h"],
+    deps = [
+        ":stream_record_reader",
+        "//components/telemetry:server_definition",
+        "//public/data_loading:riegeli_metadata_cc_proto",
+        "@com_google_absl//absl/base",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_riegeli//riegeli/bytes:istream_reader",
+        "@com_google_riegeli//riegeli/records:record_reader",
+        "@google_privacysandbox_servers_common//src/telemetry:telemetry_provider",
+    ],
+)
+
+cc_library(
+    name = "avro_stream_io",
+    srcs = ["avro_stream_io.cc"],
+    hdrs = ["avro_stream_io.h"],
+    copts = [
+        "-fexceptions",
+        "-Wno-error",
+        "-Wno-implicit-fallthrough",
+        "-Wno-non-virtual-dtor",
+    ],
+    deps = [
+        ":stream_record_reader",
+        "//components/errors:error_tag",
+        "//components/telemetry:server_definition",
+        "//public/data_loading:record_utils",
+        "//public/data_loading:riegeli_metadata_cc_proto",
+        "@avro//:avrocpp",
+        "@com_google_absl//absl/base",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@google_privacysandbox_servers_common//src/telemetry:telemetry_provider",
+    ],
+)
+
+cc_library(
+    name = "stream_record_reader_factory",
+    hdrs = ["stream_record_reader_factory.h"],
+    deps = [
+        ":stream_record_reader",
+        "@google_privacysandbox_servers_common//src/telemetry:telemetry_provider",
+    ],
+)
+
+cc_library(
+    name = "riegeli_stream_record_reader_factory",
+    srcs = ["riegeli_stream_record_reader_factory.cc"],
+    hdrs = ["riegeli_stream_record_reader_factory.h"],
+    deps = [
+        ":riegeli_stream_io",
+        ":stream_record_reader_factory",
+    ],
+)
+
+cc_library(
+    name = "avro_stream_record_reader_factory",
+    srcs = ["avro_stream_record_reader_factory.cc"],
+    hdrs = ["avro_stream_record_reader_factory.h"],
+    deps = [
+        ":avro_stream_io",
+        ":stream_record_reader_factory",
+    ],
+)
+
+cc_library(
+    name = "stream_record_reader",
+    hdrs = ["stream_record_reader.h"],
+    deps = [
+        "//public/data_loading:riegeli_metadata_cc_proto",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@google_privacysandbox_servers_common//src/logger:request_context_logger",
+    ],
+)
+
+cc_test(
+    name = "riegeli_stream_io_test",
+    size = "small",
+    srcs = [
+        "riegeli_stream_io_test.cc",
+    ],
+    deps = [
+        ":riegeli_stream_io",
+        ":riegeli_stream_record_reader_factory",
+        "//public/test_util:mocks",
+        "//public/test_util:proto_matcher",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_riegeli//riegeli/bytes:ostream_writer",
+        "@com_google_riegeli//riegeli/bytes:string_writer",
+        "@com_google_riegeli//riegeli/records:record_writer",
+    ],
+)
+
+cc_test(
+    name = "avro_stream_io_test",
+    size = "small",
+    srcs = [
+        "avro_stream_io_test.cc",
+    ],
+    copts = [
+        "-fexceptions",
+        "-Wno-error",
+        "-Wno-implicit-fallthrough",
+        "-Wno-non-virtual-dtor",
+    ],
+    deps = [
+        ":avro_stream_io",
+        "//public/test_util:mocks",
+        "//public/test_util:proto_matcher",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "delta_record_stream_reader",
+    hdrs = ["delta_record_stream_reader.h"],
+    deps = [
+        ":delta_record_reader",
+        ":riegeli_stream_io",
+        "//public/data_loading:record_utils",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "avro_delta_record_stream_reader",
+    hdrs = ["avro_delta_record_stream_reader.h"],
+    copts = [
+        "-fexceptions",
+        "-Wno-error",
+        "-Wno-implicit-fallthrough",
+        "-Wno-non-virtual-dtor",
+    ],
+    deps = [
+        ":delta_record_reader",
+        "//public/data_loading:record_utils",
+        "@avro//:avrocpp",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_test(
+    name = "delta_record_stream_reader_test",
+    size = "small",
+    srcs = ["delta_record_stream_reader_test.cc"],
+    deps = [
+        ":delta_record_stream_reader",
+        "//public/data_loading:record_utils",
+        "//public/data_loading/writers:delta_record_stream_writer",
+        "//public/test_util:data_record",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "avro_delta_record_stream_reader_test",
+    size = "small",
+    srcs = ["avro_delta_record_stream_reader_test.cc"],
+    copts = [
+        "-fexceptions",
+    ],
+    deps = [
+        ":avro_delta_record_stream_reader",
+        "//public/data_loading:record_utils",
+        "//public/data_loading/writers:avro_delta_record_stream_writer",
+        "//public/test_util:data_record",
+        "//public/test_util:proto_matcher",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

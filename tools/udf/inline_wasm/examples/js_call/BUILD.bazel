@@ -1,0 +1,44 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("//tools/udf/inline_wasm:wasm.bzl", "cc_inline_wasm_udf_delta")
+
+# builders/tools/bazel-debian run --config=emscripten \
+# //tools/udf/inline_wasm/examples/js_call:handle_request_cc_delta
+cc_inline_wasm_udf_delta(
+    name = "handle_request_cc_delta",
+    srcs = ["handle_request.cc"],
+    custom_udf_js = "my_udf.js",
+    output_file_name = "DELTA_0000000000000010",
+    tags = ["manual"],
+    deps = [
+        "@com_google_absl//absl/status:statusor",
+        "@nlohmann_json//:lib",
+    ],
+)
+
+# builders/tools/bazel-debian run --config=emscripten \
+# //tools/udf/inline_wasm/examples/js_call:handle_request_with_wasm_inline_array_cc_delta
+cc_inline_wasm_udf_delta(
+    name = "handle_request_with_wasm_inline_array_cc_delta",
+    srcs = ["handle_request.cc"],
+    custom_udf_js = "my_udf.js",
+    output_file_name = "DELTA_0000000000000011",
+    tags = ["manual"],
+    wasm_as_inline_array = True,
+    deps = [
+        "@com_google_absl//absl/status:statusor",
+        "@nlohmann_json//:lib",
+    ],
+)

@@ -1,0 +1,201 @@
+workspace(name = "google_privacysandbox_kv_server")
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+local_repository(
+    name = "google_privacysandbox_functionaltest_system",
+    path = "testing/functionaltest-system",
+)
+
+load("//builders/bazel:deps.bzl", "python_deps", "python_register_toolchains")
+
+python_deps()
+
+python_register_toolchains("//builders/bazel")
+
+# Microsoft - we have mirrored this repo, if this commit changes we should resolve this by:
+# 1 - Take the upstream commit (unless ours is newer) and update the URL query param to use the updated hash.
+# 2 - Ensure strip_prefix is still empty, ADO does not include a parent directory in the archive.
+# 3 - Ensure the sha256 hash is empty as zipping is not deterministic and ADO may produce a slightly different archive for you.
+http_archive(
+    name = "google_privacysandbox_servers_common",
+    # commit 8e9e636a104241a7389616077efb60ff73342fd0 2025-04-09
+    sha256 = "",  # Microsoft Hash must be empty
+    strip_prefix = "",  # Microsoft does not include a parent directory in the archive
+    type = "zip",
+    urls = [
+        "file:///src/workspace/third_party_deps/google_privacysandbox_servers_common_e3807bfe.zip",
+    ],
+)
+
+load(
+    "@google_privacysandbox_servers_common//third_party:cpp_deps.bzl",
+    data_plane_shared_deps_cpp = "cpp_dependencies",
+)
+
+data_plane_shared_deps_cpp()
+
+load("@google_privacysandbox_servers_common//third_party:deps1.bzl", data_plane_shared_deps1 = "deps1")
+
+data_plane_shared_deps1()
+
+load("@google_privacysandbox_servers_common//third_party:deps2.bzl", data_plane_shared_deps2 = "deps2")
+
+data_plane_shared_deps2(go_toolchains_version = "1.19.9")
+
+load("@google_privacysandbox_servers_common//third_party:deps3.bzl", data_plane_shared_deps3 = "deps3")
+
+data_plane_shared_deps3()
+
+load("@google_privacysandbox_servers_common//third_party:deps4.bzl", data_plane_shared_deps4 = "deps4")
+
+data_plane_shared_deps4()
+
+load(
+    "//third_party_deps:cpp_repositories.bzl",
+    "cpp_repositories",
+)
+
+cpp_repositories()
+
+load("//third_party_deps:container_deps.bzl", "container_deps")
+
+container_deps()
+
+# googleapis
+http_archive(
+    name = "com_google_googleapis",  # master branch from 26.04.2022
+    sha256 = "3cbe0fcdad3ad7b2fdc58b0f297190c1e05b47b7c10fd14e3364501baa14177e",
+    strip_prefix = "googleapis-f91b6cf82e929280f6562f6110957c654bd9e2e6",
+    urls = ["https://github.com/googleapis/googleapis/archive/f91b6cf82e929280f6562f6110957c654bd9e2e6.tar.gz"],
+)
+
+http_archive(
+    name = "distributed_point_functions",
+    sha256 = "19cd27b36b0ceba683c02fc6c80e61339397afc3385b91d54210c5db0a254ef8",
+    strip_prefix = "distributed_point_functions-45da5f54836c38b73a1392e846c9db999c548711",
+    urls = ["https://github.com/google/distributed_point_functions/archive/45da5f54836c38b73a1392e846c9db999c548711.tar.gz"],
+)
+
+http_archive(
+    name = "libcbor",
+    build_file = "//third_party_deps:libcbor.BUILD",
+    patch_args = ["-p1"],
+    patches = ["//third_party_deps:libcbor.patch"],
+    sha256 = "9fec8ce3071d5c7da8cda397fab5f0a17a60ca6cbaba6503a09a47056a53a4d7",
+    strip_prefix = "libcbor-0.10.2/src",
+    urls = ["https://github.com/PJK/libcbor/archive/refs/tags/v0.10.2.zip"],
+)
+
+# Dependencies for Flex/Bison build rules
+http_archive(
+    name = "rules_m4",
+    sha256 = "10ce41f150ccfbfddc9d2394ee680eb984dc8a3dfea613afd013cfb22ea7445c",
+    urls = ["https://github.com/jmillikin/rules_m4/releases/download/v0.2.3/rules_m4-v0.2.3.tar.xz"],
+)
+
+load("@rules_m4//m4:m4.bzl", "m4_register_toolchains")
+
+m4_register_toolchains(version = "1.4.18")
+
+http_archive(
+    name = "rules_bison",
+    sha256 = "2279183430e438b2dc77cacd7b1dbb63438971b2411406570f1ddd920b7c9145",
+    urls = ["https://github.com/jmillikin/rules_bison/releases/download/v0.2.2/rules_bison-v0.2.2.tar.xz"],
+)
+
+load("@rules_bison//bison:bison.bzl", "bison_register_toolchains")
+
+bison_register_toolchains(version = "3.3.2")
+
+http_archive(
+    name = "rules_flex",
+    sha256 = "8929fedc40909d19a4b42548d0785f796c7677dcef8b5d1600b415e5a4a7749f",
+    urls = ["https://github.com/jmillikin/rules_flex/releases/download/v0.2.1/rules_flex-v0.2.1.tar.xz"],
+)
+
+load("@rules_flex//flex:flex.bzl", "flex_register_toolchains")
+
+flex_register_toolchains(version = "2.6.4")
+
+load("//third_party_deps:python_deps.bzl", "python_repositories")
+
+python_repositories()
+
+# Load the starlark macro, which will define your dependencies.
+load("@latency_benchmark//:requirements.bzl", latency_benchmark_install_deps = "install_deps")
+load("@word2vec//:requirements.bzl", word2vec_install_deps = "install_deps")
+
+# Call it to define repos for your requirements.
+latency_benchmark_install_deps()
+
+word2vec_install_deps()
+
+http_archive(
+    name = "io_bazel_rules_go",
+    sha256 = "16e9fca53ed6bd4ff4ad76facc9b7b651a89db1689a2877d6fd7b82aa824e366",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.34.0/rules_go-v0.34.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.34.0/rules_go-v0.34.0.zip",
+    ],
+)
+
+# Use nogo to run `go vet` with bazel
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+
+go_rules_dependencies()
+
+go_register_toolchains(nogo = "@//:kv_nogo")
+
+# setup container_structure_test
+http_archive(
+    name = "container_structure_test",
+    sha256 = "2da13da4c4fec9d4627d4084b122be0f4d118bd02dfa52857ff118fde88e4faa",
+    strip_prefix = "container-structure-test-1.16.0",
+    urls = ["https://github.com/GoogleContainerTools/container-structure-test/archive/v1.16.0.zip"],
+)
+
+load("@container_structure_test//:repositories.bzl", "container_structure_test_register_toolchain")
+
+container_structure_test_register_toolchain(name = "cst")
+
+# Initialize Python headers
+
+http_archive(
+    name = "pybind11_bazel",
+    sha256 = "b72c5b44135b90d1ffaba51e08240be0b91707ac60bea08bb4d84b47316211bb",
+    strip_prefix = "pybind11_bazel-b162c7c88a253e3f6b673df0c621aca27596ce6b",
+    urls = ["https://github.com/pybind/pybind11_bazel/archive/b162c7c88a253e3f6b673df0c621aca27596ce6b.zip"],
+)
+
+load("@pybind11_bazel//:python_configure.bzl", "python_configure")
+
+python_configure(
+    name = "local_config_python",
+)
+
+# DiskANN and dependencies
+load("//third_party_deps:microsoft_diskann_deps.bzl", "diskann_deps")
+
+diskann_deps()
+
+# Microsoft - we have mirrored this repo, if this commit changes we should resolve this by:
+# 1 - Take the upstream commit (unless ours is newer) and update the URL query param to use the updated hash.
+# 2 - Ensure strip_prefix is still empty, ADO does not include a parent directory in the archive.
+# 3 - Ensure the sha256 hash is empty as zipping is not deterministic and ADO may produce a slightly different archive for you.
+http_archive(
+    name = "microsoft_diskann",
+    patch_args = ["-p1"],
+    patches = [
+        "//third_party_deps:microsoft_diskann_mkl.patch",
+        "//third_party_deps:microsoft_diskann_noexcept.patch",
+    ],
+    build_file = "//third_party_deps:microsoft_diskann.BUILD",
+    # commit fc3c6e25b4229016d1b40d2510c327d832b6c25b
+    sha256 = "",  # Microsoft Hash must be empty
+    strip_prefix = "",  # Microsoft does not include a parent directory in the archive
+    type = "zip",
+    urls = [
+        "file:///src/workspace/third_party_deps/microsoft_diskann_fc3c6e25.zip",
+    ],
+)

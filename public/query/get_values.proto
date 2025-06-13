@@ -1,0 +1,88 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package kv_server.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/rpc/status.proto";
+
+// Key Value Service API.
+service KeyValueService {
+  // V1 Query API as described in
+  // https://github.com/WICG/turtledove/blob/main/FLEDGE_Key_Value_Server_API.md
+  rpc GetValues(GetValuesRequest) returns (GetValuesResponse) {
+    option (google.api.http) = {
+      get: "/v1/getvalues"
+      additional_bindings {get: "/**/v1/getvalues"}
+    };
+  }
+}
+
+// Request for getting value.
+message GetValuesRequest {
+  // [DSP] List of keys to query values for, under the namespace keys.
+  repeated string keys = 1;
+  // [DSP] List of keys to query values for, under the namespace interest_group_names.
+  // Results will be stored in per_interest_group_data field of GetValuesResponse.
+  repeated string interest_group_names = 7;
+
+  // [DSP] The browser sets the hostname of the publisher page to be the value.
+  // If no specific value is available in the system for this subkey,
+  // a default value will be returned.
+  // The default value corresponds to the key when the subkey is not set.
+  optional string subkey = 2;
+  // hostname is a legacy name for subkey used specifically for Chrome FLEDGE.
+  // New requests should use subkey.
+  optional string hostname = 5;
+
+  // [SSP] List of keys to query values for, under the namespace renderUrls.
+  repeated string render_urls = 3;
+  // [SSP] List of keys to query values for, under the namespace
+  // adComponentRenderUrls.
+  repeated string ad_component_render_urls = 4;
+
+  // [Internal] List of keys to query values for, under the namespace
+  // kvinternal. Internal demo/debug namespace. Not used by browsers.
+  repeated string kv_internal = 6;
+}
+
+// Lookup result for a single key that is either a Value
+// or a status.
+message V1SingleLookupResult {
+  oneof single_lookup_result {
+    google.protobuf.Value value = 1;
+    google.rpc.Status status = 2;
+  }
+}
+
+// Response for getting value.
+message GetValuesResponse {
+  // Map of key value pairs for namespace keys.
+  map<string, V1SingleLookupResult> keys = 1;
+
+  // Map of key value pairs for namespace interest_group_names.
+  map<string, V1SingleLookupResult> per_interest_group_data = 5;
+
+  // Map of key value pairs for namespace renderUrls.
+  map<string, V1SingleLookupResult> render_urls = 2;
+
+  // Map of key value pairs for namespace adComponentRenderUrls.
+  map<string, V1SingleLookupResult> ad_component_render_urls = 3;
+
+  // Map of key value pairs for namespace kvInternal.
+  map<string, V1SingleLookupResult> kv_internal = 4;
+}

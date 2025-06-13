@@ -1,0 +1,176 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load(
+    "@rules_pkg//pkg:mappings.bzl",
+    "pkg_attributes",
+    "pkg_files",
+)
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+go_library(
+    name = "common",
+    srcs = ["common.go"],
+    importpath = "tools/server_diagnostic/common",
+    visibility = ["//tools/server_diagnostic:__subpackages__"],
+)
+
+go_library(
+    name = "diagnostic_aws_lib",
+    srcs = ["diagnostic_aws.go"],
+    importpath = "tools/server_diagnostic",
+    visibility = ["//tools/server_diagnostic:__subpackages__"],
+    deps = [":common"],
+)
+
+go_binary(
+    name = "diagnostic_cli",
+    embed = [":diagnostic_aws_lib"],
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "query_api_descriptor_set",
+    srcs = [
+        "//public/query:query_api_descriptor_set",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/query",
+)
+
+pkg_tar(
+    name = "query_api_descriptor_set_tar",
+    srcs = [":query_api_descriptor_set"],
+)
+
+pkg_files(
+    name = "helloworld_server_executables",
+    srcs = [
+        "//tools/server_diagnostic/helloworld_server",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/helloworld_server",
+)
+
+pkg_tar(
+    name = "helloworld_server_binaries_tar",
+    srcs = [":helloworld_server_executables"],
+)
+
+[
+    genrule(
+        name = "grpcurl_{}_file".format(arch),
+        srcs = ["@grpcurl_{}//file".format(arch)],
+        outs = ["grpcurl_{}".format(arch)],
+        cmd = "tar -xzf $(location @grpcurl_{arch}//file) --exclude=LICENSE --to-stdout >$(@D)/grpcurl_{arch}".format(arch = arch),
+    )
+    for arch in [
+        "x86_64",
+        "aarch64",
+    ]
+]
+
+pkg_files(
+    name = "grpcurl_files_amd64",
+    srcs = [":grpcurl_x86_64"],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/usr/bin",
+    renames = {
+        ":grpcurl_x86_64": "grpcurl",
+    },
+)
+
+pkg_files(
+    name = "grpcurl_files_arm64",
+    srcs = [":grpcurl_aarch64"],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/usr/bin",
+    renames = {
+        ":grpcurl_aarch64": "grpcurl",
+    },
+)
+
+[
+    pkg_tar(
+        name = "grpcurl_tar_{}".format(arch),
+        srcs = [":grpcurl_files_{}".format(arch)],
+    )
+    for arch in [
+        "arm64",
+        "amd64",
+    ]
+]
+
+[
+    oci_image(
+        name = "diagnostic_tool_box_image_{}".format(arch),
+        base = "@runtime-ubuntu-fulldist-debug-root-{}".format(arch),
+        tars = [
+            ":helloworld_server_binaries_tar",
+            ":query_api_descriptor_set_tar",
+            ":grpcurl_tar_{}".format(arch),
+        ],
+    )
+    for arch in [
+        "arm64",
+        "amd64",
+    ]
+]
+
+[
+    oci_load(
+        name = "diagnostic_tool_box_docker_image_{}".format(arch),
+        image = ":diagnostic_tool_box_image_{}".format(arch),
+        repo_tags = ["bazel/tools/server_diagnostic:diagnostic_tool_box_docker_image"],
+    )
+    for arch in [
+        "arm64",
+        "amd64",
+    ]
+]
+
+[
+    filegroup(
+        name = "diagnostic_tool_box_docker_image_{}.tar".format(arch),
+        srcs = [":diagnostic_tool_box_docker_image_{}".format(arch)],
+        output_group = "tarball",
+    )
+    for arch in [
+        "arm64",
+        "amd64",
+    ]
+]
+
+genrule(
+    name = "copy_to_dist",
+    srcs = [
+        ":diagnostic_cli",
+        ":diagnostic_tool_box_docker_image_arm64.tar",
+        ":diagnostic_tool_box_docker_image_amd64.tar",
+    ],
+    outs = ["copy_to_dist.bin"],
+    cmd_bash = """cat << EOF > '$@'
+mkdir -p dist/tools/server_diagnostic/arm64
+cp $(execpath :diagnostic_tool_box_docker_image_arm64.tar) dist/tools/server_diagnostic/arm64/diagnostic_tool_box_docker_image_arm64.tar
+mkdir -p dist/tools/server_diagnostic/amd64
+cp $(execpath :diagnostic_tool_box_docker_image_amd64.tar) dist/tools/server_diagnostic/amd64/diagnostic_tool_box_docker_image_amd64.tar
+cp $(execpath :diagnostic_cli) dist/tools/server_diagnostic/diagnostic_cli
+builders/tools/normalize-dist
+EOF""",
+    executable = True,
+    local = True,
+    message = "Copying server diagnostic artifacts to dist/tools/server_diagnostic",
+)

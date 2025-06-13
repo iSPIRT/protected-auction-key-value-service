@@ -1,0 +1,180 @@
+# Copyright 2023 Google LLC
+# Copyright (C) Microsoft Corporation. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = [
+    "//components:__subpackages__",
+    "//tools:__subpackages__",
+])
+
+selects.config_setting_group(
+    name = "local_otel_otlp",
+    match_all = [
+        "//:local_instance",
+        "@google_privacysandbox_servers_common//src/telemetry:local_otel_export_otlp",
+    ],
+)
+
+selects.config_setting_group(
+    name = "local_otel_ostream",
+    match_all = [
+        "//:local_instance",
+        "@google_privacysandbox_servers_common//src/telemetry:local_otel_export_ostream",
+    ],
+)
+
+local_defines = select({
+    "//:aws_instance": ["INSTANCE=\\\"aws\\\""],
+    "//:gcp_instance": ["INSTANCE=\\\"gcp\\\""],
+    "//:local_instance": ["INSTANCE=\\\"local\\\""],
+    "//conditions:default": ["INSTANCE=\\\"unknown\\\""],
+}) + select({
+    "//:aws_platform": ["PLATFORM=\\\"aws\\\""],
+    "//:gcp_platform": ["PLATFORM=\\\"gcp\\\""],
+    "//:local_platform": ["PLATFORM=\\\"local\\\""],
+    "//conditions:default": ["PLATFORM=\\\"unknown\\\""],
+}) + select({
+    "//:aws_instance": ["OTEL_EXPORT=\\\"xray\\\""],
+    ":local_otel_ostream": ["OTEL_EXPORT=\\\"ostream\\\""],
+    ":local_otel_otlp": ["OTEL_EXPORT=\\\"otlp\\\""],
+    "//conditions:default": ["OTEL_EXPORT=\\\"unknown\\\""],
+}) + select({
+    "//:nonprod_mode": ["MODE=\\\"non_prod\\\""],
+    "//:prod_mode": ["MODE=\\\"prod\\\""],
+    "//conditions:default": ["MODE=\\\"unknown\\\""],
+})
+
+genrule(
+    name = "generate_version_linkstamp",
+    outs = ["version_linkstamp.cc"],
+    cmd = """
+        $(execpath :generate_version_h) "$(TARGET_CPU)-$(COMPILATION_MODE)" >>$@
+    """,
+    # Undocumented attr to depend on workspace status files.
+    # Used here because generate_version_h depends on the workspace status files.
+    stamp = 1,
+    tools = [":generate_version_h"],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "build_flags",
+    srcs = [
+        "build_flags.cc",
+        "build_info.cc",
+    ],
+    hdrs = [
+        "build_info.h",
+    ],
+    linkstamp = ":generate_version_linkstamp",
+    local_defines = local_defines,
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log",
+    ],
+)
+
+cc_library(
+    name = "platform_initializer",
+    srcs = select({
+        "//:aws_platform": [
+            "platform_initializer_aws.cc",
+        ],
+        "//:azure_microsoft_platform": [
+            "platform_initializer_azure.cc",
+        ],
+        "//:gcp_platform": [
+            "platform_initializer_gcp.cc",
+        ],
+        "//:local_platform": [
+            "platform_initializer_local.cc",
+        ],
+    }),
+    hdrs = [
+        "platform_initializer.h",
+    ],
+    copts = select({
+        "//:gcp_platform": ["-DCLOUD_PLATFORM_GCP=1"],
+        "//conditions:default": [],
+    }) + select({
+        "//:local_instance": ["-DINSTANCE_LOCAL=1"],
+        "//conditions:default": [],
+    }),
+    visibility = [
+        "//components:__subpackages__",
+        "//production/packaging:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+    deps = select({
+        "//:aws_platform": [
+            "//components/errors:aws_error_util",
+            "@aws_sdk_cpp//:core",
+            "@google_privacysandbox_servers_common//src/public/core/interface:execution_result",
+            "@google_privacysandbox_servers_common//src/public/cpio/interface:cpio",
+        ],
+        "//:azure_microsoft_platform": [
+            "@google_privacysandbox_servers_common//src/public/core/interface:errors",
+            "@google_privacysandbox_servers_common//src/public/cpio/interface:cpio",
+        ],
+        "//:gcp_platform": [
+            "@google_privacysandbox_servers_common//src/public/core/interface:errors",
+            "@google_privacysandbox_servers_common//src/public/cpio/interface:cpio",
+        ],
+        "//conditions:default": [],
+    }) + [
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "version_linkstamp",
+    # Linking this library makes build cache inefficient,
+    visibility = [
+        "//components/data_server/server:__pkg__",
+        "//components/telemetry:__pkg__",
+        "//tools/request_simulation:__pkg__",
+    ],
+    deps = [":build_flags"],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "request_context",
+    srcs = [
+        "request_context.cc",
+    ],
+    hdrs = [
+        "request_context.h",
+    ],
+    deps = [
+        "//components/telemetry:server_definition",
+        "@google_privacysandbox_servers_common//src/logger:request_context_impl",
+    ],
+)
+
+cc_library(
+    name = "safe_path_log_context",
+    hdrs = [
+        "safe_path_log_context.h",
+    ],
+    deps = [
+        "@google_privacysandbox_servers_common//src/logger:request_context_impl",
+    ],
+)

@@ -1,0 +1,212 @@
+#!/bin/bash
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+set -o pipefail
+set -o errexit
+
+START=$(date +%s)
+readonly START
+
+trap _print_runtime EXIT
+function _print_runtime() {
+  local -r -i STATUS=$?
+  local -r -i END=$(date +%s)
+  /usr/bin/env LC_ALL=en_US.UTF-8 printf "\naws/build_and_test_all runtime: %'ds\n" $((END - START)) &>/dev/stderr
+  if [[ ${STATUS} -eq 0 ]]; then
+    printf "aws/build_and_test completed successfully\n" &>/dev/stderr
+  else
+    printf "Error: aws/build_and_test completed with status code: %s\n" "${STATUS}" &>/dev/stderr
+  fi
+  exit ${STATUS}
+}
+
+declare MODE=prod
+declare -i SKIP_EIF=0
+
+function usage() {
+  local exitval=${1-1}
+  cat &>/dev/stderr <<USAGE
+usage:
+  $0 <options>
+    --without-shared-cache       Containers will not mount ${HOME}/.cache/bazel
+    --with-ami                   AMI region in which to build and store AWS AMIs. Use multiple times to specify more than one region
+                                 If empty, none will be built
+    --no-precommit               Skip precommit checks
+    --with-tests                 Also runs tests before building
+    --mode <type>                Mode can  be prod or nonprod. Default: ${MODE}
+    --skip-eif                   Skip building the eif and checking pcr0
+
+environment variables (all optional):
+    WORKSPACE                    Set the path to the workspace (repo root)
+    BAZEL_STARTUP_ARGS           Additional startup arguments to pass to bazel invocations
+    BAZEL_EXTRA_ARGS             Additional command arguments to pass to bazel invocations
+    CBUILD_ARGS                  Additional command-line arguments to cbuild
+USAGE
+  # shellcheck disable=SC2086
+  exit ${exitval}
+}
+
+declare -a AMI_REGIONS
+declare -a BUILD_AND_TEST_ARGS
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --with-ami)
+      AMI_REGIONS+=("$2")
+      shift 2 || usage
+      ;;
+    --no-precommit)
+      BUILD_AND_TEST_ARGS+=("--no-precommit")
+      shift
+      ;;
+    --with-tests)
+      BUILD_AND_TEST_ARGS+=("--with-tests")
+      shift
+      ;;
+    --mode)
+      MODE="$2"
+      shift
+      shift
+      ;;
+    --skip-eif)
+      SKIP_EIF=1
+      shift
+      ;;
+    --verbose)
+      BUILD_AND_TEST_ARGS+=("--verbose")
+      set -o xtrace
+      shift
+      ;;
+    -h | --help) usage 0 ;;
+    *) usage ;;
+  esac
+done
+
+function arr_to_string_list() {
+  declare -r -n arr=$1
+  printf -v joined '"%s",' "${arr[@]}"
+  printf "[%s]" "${joined%,}"
+}
+
+# Exit 1 on any error before pushing to origin.
+function fail() {
+  printf "\n\n[ERROR]: Failure: %s\n\n" "$@"
+  sleep 5s  # Make sure that stdout has time to be written
+  exit 1
+}
+
+printf "==== Sourcing builder.sh =====\n"
+# We can't use $WORKSPACE here as it may not be set - it'll be created
+# by builder.sh if it's empty.
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+readonly SCRIPT_DIR
+BUILDER="${SCRIPT_DIR}"/../../../builders/tools/builder.sh
+readonly BUILDER
+if [[ ! -f ${BUILDER} ]]; then
+  ERROR_MESSAGE=$(printf "builder.sh file does not exist, expected at: %s\n"  "${BUILDER}")
+  fail "$ERROR_MESSAGE"
+fi
+# shellcheck source=builders/tools/builder.sh
+source "${BUILDER}" || fail "Failed to source builder.sh"
+DIST="${WORKSPACE}"/dist
+readonly DIST
+
+printf "==== Running build_and_test_all_in_docker =====\n"
+if ! [[ -r ${WORKSPACE}/production/packaging/build_and_test_all_in_docker && -x ${WORKSPACE}/production/packaging/build_and_test_all_in_docker ]]; then
+  printf "build_and_test script not found at location: %s/production/packaging/build_and_test_all_in_docker\n" "${WORKSPACE}" &>/dev/stderr
+  fail "build_and_test not found"
+fi
+if ! "${WORKSPACE}"/production/packaging/build_and_test_all_in_docker "${BUILD_AND_TEST_ARGS[@]}" --instance aws --mode "${MODE}"; then
+  fail "Failed to run build_and_test_all_in_docker"
+fi
+
+ARCHITECTURE="$("${WORKSPACE}"/builders/tools/get-architecture)"
+
+printf "==== Creating dist dir =====\n"
+mkdir -p "${DIST}"/aws
+mkdir -p "${DIST}"/artifacts
+chmod 770 "${DIST}" "${DIST}"/aws "${DIST}"/artifacts
+
+if [[ ${SKIP_EIF} -eq 0  ]]; then
+  printf "==== build AWS artifacts using build-amazonlinux2023 =====\n"
+  # build nitro enclave image, collect eif artifacts
+  IMAGE_URI=bazel/production/packaging/aws/data_server
+  readonly IMAGE_URI
+  IMAGE_TAG=$(mktemp --dry-run temp-XXXXXX)
+  builder::cbuild_al2023 $"
+  set -o errexit
+  # extract server docker image into local docker client and retag it
+  docker load -i dist/server_docker_image.tar
+  docker tag ${IMAGE_URI}:server_docker_image ${IMAGE_URI}:'${IMAGE_TAG}'
+  rm -f dist/aws/{server_enclave_image.eif,server_enclave_image.json,pcr0.json}
+  nitro-cli build-enclave --docker-uri ${IMAGE_URI}:'${IMAGE_TAG}' --output-file dist/aws/server_enclave_image.eif >dist/aws/server_enclave_image.json
+  if [[ \$? -ne 0 ]]; then
+    printf 'error building nitro eif image\n'
+    exit 1
+  fi
+  jq --compact-output '{PCR0: .Measurements.PCR0}' dist/aws/server_enclave_image.json >dist/aws/pcr0.json
+  jq --compact-output --raw-output '.Measurements.PCR0' dist/aws/server_enclave_image.json >dist/aws/pcr0.txt
+  cat dist/aws/pcr0.json
+  cp dist/aws/server_enclave_image.eif dist/artifacts/${ARCHITECTURE}_aws_server_${MODE}_enclave_image.eif
+  exit 0
+  "
+  docker image rm --force ${IMAGE_URI}:"${IMAGE_TAG}" || fail "Unable to remove Docker image"
+fi
+
+printf "==== Copying to dist =====\n"
+builder::cbuild_al2023 $"
+trap _collect_logs EXIT
+function _collect_logs() {
+  local -r -i STATUS=\$?
+  printf 'Collecting bazel logs...\n' &>/dev/stderr
+  bazel ${BAZEL_STARTUP_ARGS} run ${BAZEL_EXTRA_ARGS} //:collect-logs
+  exit \${STATUS}
+}
+set -o errexit
+bazel ${BAZEL_STARTUP_ARGS} run ${BAZEL_EXTRA_ARGS} //production/packaging/aws/data_server/ami:copy_to_dist
+cp dist/server_docker_image.tar dist/aws/server_docker_image.tar
+cp dist/aws/server_docker_image.tar dist/artifacts/${ARCHITECTURE}_aws_server_${MODE}_docker_image.tar
+"
+
+printf "==== Running normalize_dist.sh =====\n"
+if ! [[ -r ${WORKSPACE}/builders/tools/normalize-dist && -x ${WORKSPACE}/builders/tools/normalize-dist ]]; then
+  printf "normalize_dist.sh file does not exist, expected at: %s/builders/tools/normalize-dist\n"  "${WORKSPACE}" &>/dev/stderr
+  fail "normalize_dist.sh does not exist"
+fi
+"${WORKSPACE}"/builders/tools/normalize-dist || { fail "Unable to run normalize-dist"; }
+
+if [[ -n ${AMI_REGIONS[0]} ]]; then
+  UTILS_IMAGE="$("${WORKSPACE}"/builders/tools/get-builder-image-tagged --image utils)"
+  readonly UTILS_IMAGE
+  DOCKER_USER="$(id -u):$(id -g)"
+  readonly DOCKER_USER
+  readonly AWSDIR="${DIST}"/aws
+  docker run --rm --user "${DOCKER_USER}" --entrypoint=unzip --volume "${AWSDIR}:${AWSDIR}" --workdir "${AWSDIR}" "${UTILS_IMAGE}" -o -q "${AWSDIR}"/aws_artifacts.zip
+  printf "==== build AWS AMI (using packer) =====\n"
+  regions="$(arr_to_string_list AMI_REGIONS)"
+  builder::cbuild_al2023 "
+set -o errexit
+packer build \
+  -var=regions='${regions}' \
+  -var=commit_version=$(git rev-parse HEAD) \
+  -var=build_mode=${MODE} \
+  -var=distribution_dir=dist/aws \
+  -var=workspace=/src/workspace \
+  production/packaging/aws/data_server/ami/image.pkr.hcl
+"
+fi
+
+printf "To push a newer version of SQS lambda, run %s/aws/push_sqs\n" "${DIST}"

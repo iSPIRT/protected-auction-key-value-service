@@ -1,0 +1,84 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto2";
+
+package kv_server;
+
+import "public/base_types.proto";
+import "riegeli/records/records_metadata.proto";
+
+// Metadata specific to DELTA files.
+message DeltaMetadata {}
+
+// Metadata specific to SNAPSHOT files.
+message SnapshotMetadata {
+  // [Required]
+  // (1) Name of the previous snapshot file used to generate this snapshot or
+  // (2) Name of the oldest delta file included in the snapshot.
+  optional string starting_file = 1;
+
+  // [Required]
+  // Name of the most recent delta file included in the snapshot.
+  optional string ending_delta_file = 2;
+}
+
+// Sharding metadata for DELTA and SNAPSHOT files.
+message ShardingMetadata {
+  // The shard number that data in this file belong to.
+  optional int64 shard_num = 1;
+}
+
+// Work in progress. Do not use.
+// Metadata specific to LOGICAL_SHARDING_CONFIG files.
+message LogicalShardingConfigMetadata {
+  // [Required] Number of logical shards, recommended to be a power of 2 and
+  // much larger than `num_physical_shards`. Data records are assigned to
+  // logical shards and logical shards map to physical shards (actual data
+  // servers).
+  optional int32 num_logical_shards = 1;
+
+  // [Required] Number of physical shards. Maps to actual physical data servers
+  // that store data records. Each physical shard can be responsible for data
+  // records assigned to different logical shards.
+  optional int32 num_physical_shards = 2;
+
+  // [Required] sha256sum of the mapping between logical shards and physical
+  // shards. This is fixed for each logical sharding config file, but can be
+  // different between files with the same number of logical and physical
+  // shards.
+  optional string shard_mapping_sha256sum = 3;
+
+  // [Required] Unix timestamp when the logical sharding config file was
+  // created.
+  optional int64 creation_timestamp = 4;
+}
+
+// All K/V server metadata related to one riegeli file.
+message KVFileMetadata {
+  // All records in one file are from this namespace.
+  optional KeyNamespace.Enum key_namespace = 1 [deprecated = true];
+
+  oneof file_type {
+    DeltaMetadata delta = 2;
+    SnapshotMetadata snapshot = 3;
+    LogicalShardingConfigMetadata logical_sharding_config = 5;
+  }
+
+  optional ShardingMetadata sharding_metadata = 4;
+}
+
+extend riegeli.RecordsMetadata {
+  optional KVFileMetadata kv_file_metadata = 20220706;
+}

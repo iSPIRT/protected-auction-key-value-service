@@ -1,0 +1,121 @@
+{
+  "widgets": [
+    {
+      "height": 9,
+      "width": 9,
+      "y": 0,
+      "x": 9,
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('service.name=\"request-simulation\" MetricName=\"EstimatedQPS\"', 'Maximum', 60)",
+              "id": "e1",
+              "label": "$${PROP('Dim.testing.server')}",
+              "region": "us-east-1"
+            }
+          ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Estimated QPS",
+        "period": 60,
+        "yAxis": {
+          "left": {
+            "showUnits": false,
+            "min": 0
+          }
+        },
+        "stat": "Average"
+      }
+    },
+    {
+      "height": 9,
+      "width": 9,
+      "y": 0,
+      "x": 0,
+      "type": "metric",
+      "properties": {
+        "sparkline": false,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('service.name=\"request-simulation\" MetricName=\"ServerResponseStatus\"', 'Average', 300)",
+              "id": "e1",
+              "label": "$${PROP('Dim.testing.server')} $${PROP('Dim.status')}",
+              "period": 300
+            }
+          ]
+        ],
+        "view": "singleValue",
+        "stacked": false,
+        "region": "us-east-1",
+        "stat": "Average",
+        "period": 300
+      }
+    },
+    {
+      "height": 9,
+      "width": 9,
+      "y": 9,
+      "x": 0,
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('service.name=\"request-simulation\" MetricName=\"P50GrpcLatency\" OR \"P90GrpcLatency\" OR \"P99GrpcLatency\"', 'Maximum', 60)",
+              "id": "e1",
+              "label": "$${PROP('Dim.testing.server')}",
+              "region": "us-east-1"
+            }
+          ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "stat": "Average",
+        "period": 60,
+        "title": "Server response latency ms",
+        "yAxis": {
+          "left": {
+            "showUnits": true,
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "height": 9,
+      "width": 9,
+      "y": 9,
+      "x": 9,
+      "type": "metric",
+      "properties": {
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('service.name=\"request-simulation\" MetricName=\"RequestsSent\"', 'Maximum', 60)",
+              "id": "e1",
+              "label": "$${PROP('Dim.testing.server')}",
+              "region": "us-east-1"
+            }
+          ]
+        ],
+        "title": "Request sent",
+        "period": 60,
+        "yAxis": {
+          "left": {
+            "showUnits": false,
+            "min": 0
+          }
+        }
+      }
+    }
+  ]
+}

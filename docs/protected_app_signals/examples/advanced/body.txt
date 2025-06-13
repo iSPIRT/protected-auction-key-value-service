@@ -1,0 +1,16 @@
+'{
+   "metadata":
+   {
+      "is_pas": "true"
+   },
+   "partitions":[
+      {
+        "id":0,
+        "arguments":[
+          {
+            "data": "{ \\"metadataKeys\\":[ \\"animals\\", \\"garden\\", \\"dinner\\", \\"hotels\\" ], \\"signal\\" : \\"food\\" }"
+          }
+         ]
+      }
+   ]
+}'

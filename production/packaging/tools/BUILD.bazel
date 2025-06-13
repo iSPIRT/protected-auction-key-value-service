@@ -1,0 +1,149 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load(
+    "@rules_pkg//pkg:mappings.bzl",
+    "pkg_attributes",
+    "pkg_filegroup",
+    "pkg_files",
+)
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
+
+pkg_files(
+    name = "data_cli",
+    srcs = ["//tools/data_cli"],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/data_cli",
+)
+
+pkg_files(
+    name = "benchmarks",
+    srcs = [
+        "//components/tools/benchmarks:data_loading_benchmark",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/benchmarks",
+)
+
+pkg_files(
+    name = "realtime",
+    srcs = [
+        "//components/tools:realtime_updates_publisher",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/realtime",
+)
+
+pkg_files(
+    name = "test_serving_data_generator",
+    srcs = [
+        "//tools/serving_data_generator:test_serving_data_generator",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/serving_data_generator",
+)
+
+pkg_files(
+    name = "udf_delta_file_tester",
+    srcs = [
+        "//tools/udf/udf_tester:udf_delta_file_tester",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/udf",
+)
+
+pkg_files(
+    name = "udf_delta_file_generator",
+    srcs = [
+        "//tools/udf/udf_generator:udf_delta_file_generator",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/udf",
+)
+
+pkg_files(
+    name = "validator",
+    srcs = [
+        "//components/tools/sharding_correctness_validator:validator",
+    ],
+    attributes = pkg_attributes(mode = "0555"),
+    prefix = "/tools/validator",
+)
+
+pkg_filegroup(
+    name = "tools_executables",
+    srcs = [
+        ":benchmarks",
+        ":data_cli",
+        ":realtime",
+        ":test_serving_data_generator",
+        ":udf_delta_file_generator",
+        ":udf_delta_file_tester",
+        ":validator",
+    ],
+    prefix = "/",
+)
+
+pkg_zip(
+    name = "tools_binaries",
+    srcs = [":tools_executables"],
+)
+
+pkg_tar(
+    name = "tools_binaries_tar",
+    srcs = [":tools_executables"],
+)
+
+oci_image(
+    name = "tools_binaries_image",
+    base = select({
+        "@platforms//cpu:arm64": "@runtime-debian-debug-nonroot-arm64",
+        "@platforms//cpu:x86_64": "@runtime-debian-debug-nonroot-amd64",
+    }),
+    tars = [
+        ":tools_binaries_tar",
+    ],
+)
+
+oci_load(
+    name = "tools_binaries_docker_image",
+    image = ":tools_binaries_image",
+    repo_tags = ["bazel/production/packaging/tools:tools_binaries_docker_image"],
+)
+
+filegroup(
+    name = "tools_binaries_docker_image.tar",
+    srcs = [":tools_binaries_docker_image"],
+    output_group = "tarball",
+)
+
+genrule(
+    name = "copy_to_dist",
+    srcs = [
+        ":tools_binaries",
+        ":tools_binaries_docker_image.tar",
+    ],
+    outs = ["copy_to_dist.bin"],
+    cmd_bash = """cat << EOF > '$@'
+mkdir -p dist/debian
+cp $(execpath :tools_binaries) dist/debian
+cp $(execpath :tools_binaries_docker_image.tar) dist/tools_binaries_docker_image.tar
+builders/tools/normalize-dist
+EOF""",
+    executable = True,
+    local = True,
+    message = "Copying tools to dist/debian directory",
+)

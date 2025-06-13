@@ -1,0 +1,78 @@
+diff --git a/include/common_includes.h b/include/common_includes.h
+index e1a51bd..d679525 100644
+--- a/include/common_includes.h
++++ b/include/common_includes.h
+@@ -16,7 +16,7 @@
+ #include <fstream>
+ #include <iostream>
+ #include <iomanip>
+-#include <omp.h>
++#include "omp.h"
+ #include <queue>
+ #include <random>
+ #include <set>
+diff --git a/src/filter_utils.cpp b/src/filter_utils.cpp
+index 09d740e..c8bfe71 100644
+--- a/src/filter_utils.cpp
++++ b/src/filter_utils.cpp
+@@ -8,7 +8,7 @@
+ #include <string>
+ #include <tuple>
+ 
+-#include <omp.h>
++#include "omp.h"
+ #include "filter_utils.h"
+ #include "index.h"
+ #include "parameters.h"
+diff --git a/src/index.cpp b/src/index.cpp
+index bf93344..c323870 100644
+--- a/src/index.cpp
++++ b/src/index.cpp
+@@ -1,7 +1,7 @@
+ // Copyright (c) Microsoft Corporation. All rights reserved.
+ // Licensed under the MIT license.
+ 
+-#include <omp.h>
++#include "omp.h"
+ 
+ #include <type_traits>
+ 
+diff --git a/src/math_utils.cpp b/src/math_utils.cpp
+index 7481da8..9d516d0 100644
+--- a/src/math_utils.cpp
++++ b/src/math_utils.cpp
+@@ -4,7 +4,7 @@
+ #include <limits>
+ #include <malloc.h>
+ #include <math_utils.h>
+-#include <mkl.h>
++#include "mkl.h"
+ #include "logger.h"
+ #include "utils.h"
+ 
+diff --git a/src/partition.cpp b/src/partition.cpp
+index 570d45c..a08b0d7 100644
+--- a/src/partition.cpp
++++ b/src/partition.cpp
+@@ -7,7 +7,7 @@
+ #include <sstream>
+ #include <string>
+ 
+-#include <omp.h>
++#include "omp.h"
+ #include "tsl/robin_map.h"
+ #include "tsl/robin_set.h"
+ 
+diff --git a/src/restapi/search_wrapper.cpp b/src/restapi/search_wrapper.cpp
+index 001e36d..3f41710 100644
+--- a/src/restapi/search_wrapper.cpp
++++ b/src/restapi/search_wrapper.cpp
+@@ -3,7 +3,7 @@
+ 
+ #include <ctime>
+ #include <iomanip>
+-#include <omp.h>
++#include "omp.h"
+ 
+ #include "utils.h"
+ #include <restapi/search_wrapper.h>

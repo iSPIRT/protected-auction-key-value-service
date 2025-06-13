@@ -1,0 +1,280 @@
+# Copyright 2023 Google LLC
+# Copyright (C) Microsoft Corporation. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@io_bazel_rules_go//go:def.bzl", "nogo")
+
+package(default_visibility = ["//:__subpackages__"])
+
+# Config settings to determine which platform the system will be built to run on
+# Use --config=VALUE_platform specified in .bazelrc instead of using this flag directly.
+# Example:
+# bazel build components/... --config=aws_platform
+string_flag(
+    name = "platform",
+    build_setting_default = "aws",
+    values = [
+        "aws",
+        "azure_microsoft",
+        "gcp",
+        "local",
+    ],
+)
+
+config_setting(
+    name = "aws_platform",
+    flag_values = {
+        ":platform": "aws",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+config_setting(
+    name = "azure_microsoft_platform",
+    flag_values = {
+        ":platform": "azure_microsoft",
+    },
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+config_setting(
+    name = "gcp_platform",
+    flag_values = {
+        ":platform": "gcp",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+config_setting(
+    name = "local_platform",
+    flag_values = {
+        ":platform": "local",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+# Config settings to determine which instance the system will be built to run on
+# Use --configVALUE_instance specified in .bazelrc instead of using this flag directly.
+# Example:
+# bazel build components/... --config=aws_instance
+string_flag(
+    name = "instance",
+    build_setting_default = "aws",
+    values = [
+        "aws",
+        "azure_microsoft",
+        "gcp",
+        "local",
+    ],
+)
+
+config_setting(
+    name = "aws_instance",
+    flag_values = {
+        ":instance": "aws",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+config_setting(
+    name = "azure_microsoft_instance",
+    flag_values = {
+        ":instance": "azure_microsoft",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "gcp_instance",
+    flag_values = {
+        ":instance": "gcp",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+config_setting(
+    name = "local_instance",
+    flag_values = {
+        ":instance": "local",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//production/packaging:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+string_flag(
+    name = "mode",
+    build_setting_default = "prod",
+    values = [
+        "prod",
+        "nonprod",
+    ],
+)
+
+config_setting(
+    name = "prod_mode",
+    flag_values = {
+        ":mode": "prod",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+config_setting(
+    name = "nonprod_mode",
+    flag_values = {
+        ":mode": "nonprod",
+    },
+    visibility = [
+        "//components:__subpackages__",
+        "//tools:__subpackages__",
+    ],
+)
+
+selects.config_setting_group(
+    name = "aws_prod",
+    match_all = [
+        "//:aws_platform",
+        "//:prod_mode",
+    ],
+)
+
+selects.config_setting_group(
+    name = "aws_nonprod",
+    match_all = [
+        "//:aws_platform",
+        "//:nonprod_mode",
+    ],
+)
+
+selects.config_setting_group(
+    name = "azure_microsoft_prod",
+    match_all = [
+        "//:azure_microsoft_platform",
+        "//:prod_mode",
+    ],
+)
+
+selects.config_setting_group(
+    name = "azure_microsoft_nonprod",
+    match_all = [
+        "//:azure_microsoft_platform",
+        "//:nonprod_mode",
+    ],
+)
+
+selects.config_setting_group(
+    name = "gcp_prod",
+    match_all = [
+        "//:gcp_platform",
+        "//:prod_mode",
+    ],
+)
+
+selects.config_setting_group(
+    name = "gcp_nonprod",
+    match_all = [
+        "//:gcp_platform",
+        "//:nonprod_mode",
+    ],
+)
+
+exports_files(
+    [".bazelversion"],
+)
+
+genrule(
+    name = "update-deps",
+    outs = ["update_deps.bin"],
+    cmd = """cat << EOF > '$@'
+builders/tools/pre-commit autoupdate
+EOF""",
+    executable = True,
+    local = True,
+)
+
+genrule(
+    name = "precommit-hooks",
+    outs = ["run_precommit_hooks.bin"],
+    cmd = """cat << EOF > '$@'
+builders/tools/pre-commit
+EOF""",
+    executable = True,
+    local = True,
+)
+
+genrule(
+    name = "buildifier",
+    outs = ["run_buildifier.bin"],
+    cmd = """cat << EOF > '$@'
+builders/tools/pre-commit buildifier
+EOF""",
+    executable = True,
+    local = True,
+)
+
+genrule(
+    name = "collect-logs",
+    outs = ["collect_logs.bin"],
+    cmd_bash = """cat << EOF > '$@'
+tools/collect-logs "\\$$@"
+EOF""",
+    executable = True,
+    local = True,
+    message = "copy bazel build and test logs",
+)
+
+genrule(
+    name = "collect-coverage",
+    outs = ["collect_coverage.bin"],
+    cmd_bash = """cat << EOF > '$@'
+builders/tools/collect-coverage "\\$$@"
+EOF""",
+    executable = True,
+    local = True,
+    message = "generate coverage report",
+)
+
+exports_files([
+    "buf.yaml",
+])
+
+nogo(
+    name = "kv_nogo",
+    vet = True,
+    visibility = ["//visibility:public"],
+)

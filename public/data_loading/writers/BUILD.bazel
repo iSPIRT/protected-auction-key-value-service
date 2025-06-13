@@ -1,0 +1,133 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "delta_record_writer",
+    hdrs = ["delta_record_writer.h"],
+    deps = [
+        "//public/data_loading:record_utils",
+        "//public/data_loading:riegeli_metadata_cc_proto",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+cc_library(
+    name = "delta_record_stream_writer",
+    srcs = ["delta_record_stream_writer.cc"],
+    hdrs = ["delta_record_stream_writer.h"],
+    deps = [
+        ":delta_record_writer",
+        "//public/data_loading:record_utils",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_riegeli//riegeli/bytes:ostream_writer",
+        "@com_google_riegeli//riegeli/records:record_writer",
+    ],
+)
+
+cc_library(
+    name = "avro_delta_record_stream_writer",
+    hdrs = ["avro_delta_record_stream_writer.h"],
+    deps = [
+        ":delta_record_writer",
+        "//public/data_loading:record_utils",
+        "//public/data_loading/readers:avro_stream_io",
+        "@avro//:avrocpp",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_test(
+    name = "delta_record_stream_writer_test",
+    size = "small",
+    srcs = ["delta_record_stream_writer_test.cc"],
+    deps = [
+        ":delta_record_stream_writer",
+        "//public/data_loading/readers:riegeli_stream_io",
+        "//public/data_loading/readers:riegeli_stream_record_reader_factory",
+        "//public/test_util:data_record",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "snapshot_stream_writer",
+    hdrs = ["snapshot_stream_writer.h"],
+    copts = [
+        "-fexceptions",
+    ],
+    deps = [
+        ":avro_delta_record_stream_writer",
+        ":delta_record_stream_writer",
+        ":delta_record_writer",
+        "//public/data_loading:filename_utils",
+        "//public/data_loading:record_utils",
+        "//public/data_loading/aggregation:record_aggregator",
+        "//public/data_loading/readers:avro_delta_record_stream_reader",
+        "//public/data_loading/readers:delta_record_stream_reader",
+        "@com_google_absl//absl/hash",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "snapshot_stream_writer_test",
+    srcs = ["snapshot_stream_writer_test.cc"],
+    copts = [
+        "-fexceptions",
+    ],
+    deps = [
+        ":snapshot_stream_writer",
+        "//public/data_loading:record_utils",
+        "//public/test_util:data_record",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "delta_record_limiting_file_writer",
+    srcs = ["delta_record_limiting_file_writer.cc"],
+    hdrs = ["delta_record_limiting_file_writer.h"],
+    deps = [
+        ":delta_record_writer",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_riegeli//riegeli/bytes:fd_writer",
+        "@com_google_riegeli//riegeli/bytes:limiting_writer",
+        "@com_google_riegeli//riegeli/records:record_writer",
+    ],
+)
+
+cc_test(
+    name = "delta_record_limiting_file_writer_test",
+    size = "small",
+    srcs = ["delta_record_limiting_file_writer_test.cc"],
+    deps = [
+        ":delta_record_limiting_file_writer",
+        "//public/data_loading/readers:delta_record_stream_reader",
+        "//public/test_util:data_record",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

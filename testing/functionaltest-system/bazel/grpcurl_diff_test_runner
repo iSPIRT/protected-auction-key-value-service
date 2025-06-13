@@ -1,0 +1,160 @@
+#!/bin/bash
+
+set -o errexit
+
+function usage() {
+  local -r -i exitval=$1
+  cat &>/dev/stderr <<USAGE
+usage:
+  $0 <options>
+    --endpoint-hostport <host:port> host:port string
+    --endpoint-type <type>          protocol: grpc or http
+    --docker-network <name>         docker network
+    --protoset <filename>           protobuf spec image file
+    --rpc <rpc name>                rpc name
+    --request <filename>            request.json filename
+    --jq-pre-filter <filename>      jq program to transform the request
+    --jq-post-filter <filename>     jq program to transform the reply
+    --jq-post-slurp                 run jq postprocessor in stream slurp mode
+    --reply <filename>              golden reply against which to diff the output
+environment variables:
+    TEST_TOOLS_IMAGE                docker image uri for test tools
+USAGE
+  # shellcheck disable=SC2086
+  exit ${exitval}
+}
+
+declare -i JQ_POST_SLURP=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --endpoint-hostport)
+      ENDPOINT_HOSTPORT="$2"
+      shift 2
+      ;;
+    --endpoint-type)
+      ENDPOINT_TYPE="$2"
+      shift 2
+      ;;
+    --docker-network)
+      DOCKER_NETWORK="$2"
+      shift 2
+      ;;
+    --rpc)
+      RPC="$2"
+      shift 2
+      ;;
+    --protoset)
+      PROTOSET_FILENAME="$2"
+      shift 2
+      ;;
+    --request)
+      REQUEST_FILENAME="$2"
+      shift 2
+      ;;
+    --reply)
+      GOLDEN_REPLY="$2"
+      shift 2
+      ;;
+    --jq-pre-filter)
+      JQ_PRE_PROGRAM_FILENAME="$2"
+      shift 2
+      ;;
+    --jq-post-filter)
+      JQ_POST_PROGRAM_FILENAME="$2"
+      shift 2
+      ;;
+    --jq-post-slurp)
+      JQ_POST_SLURP=1
+      shift
+      ;;
+    --help | -h) usage 0 ;;
+    *) usage 1 ;;
+  esac
+done
+
+set -o xtrace
+
+if [[ ${ENDPOINT_TYPE} == grpc ]]; then
+  RUNNER_APP=grpcurl
+  : "${PROTOSET_FILENAME?"Error: --protoset must be specified"}"
+elif [[ ${ENDPOINT_TYPE} == http ]]; then
+  RUNNER_APP=curl
+else
+  printf "Error: --endpoint-type must be a valid type: grpc or http\n"
+  exit 1
+fi
+
+: "${RPC?"Error: --rpc must be specified"}"
+: "${REQUEST_FILENAME?"Error: --request must be specified"}"
+: "${GOLDEN_REPLY?"Error: --reply must be specified"}"
+: "${ENDPOINT_HOSTPORT?"Error: --endpoint-hostport not specified"}"
+: "${TEST_TOOLS_IMAGE?"Error: Test tools image URI not specified in TEST_TOOLS_IMAGE env var"}"
+
+REQ_JSON="$(cat "${REQUEST_FILENAME}")"
+TMP_REPLY="$(mktemp --dry-run)"
+trap cleanup EXIT
+function cleanup() {
+  local -r -i STATUS=$?
+  rm -f "${TMP_REPLY}"
+  exit ${STATUS}
+}
+
+declare -a DOCKER_ARGS=(
+  "--rm"
+  "--interactive"
+  "--entrypoint=/bin/bash"
+  "--tmpfs=/work"
+  "--workdir=/work"
+)
+if [[ -n ${DOCKER_NETWORK} ]]; then
+  DOCKER_ARGS+=("--network=${DOCKER_NETWORK}")
+fi
+if [[ -s ${JQ_PRE_PROGRAM_FILENAME} ]]; then
+  JQ_PRE_PROGRAM="$(cat "${JQ_PRE_PROGRAM_FILENAME}")"
+fi
+declare -a JQ_POST_ARGS=(
+  --from-file post-filter.jq
+)
+if [[ -s ${JQ_POST_PROGRAM_FILENAME} ]]; then
+  JQ_POST_PROGRAM="$(cat "${JQ_POST_PROGRAM_FILENAME}")"
+  if [[ ${JQ_POST_SLURP} -eq 1 ]]; then
+    JQ_POST_ARGS+=(--slurp)
+  fi
+fi
+docker run "${DOCKER_ARGS[@]}" "${TEST_TOOLS_IMAGE}" -c "
+set -o errexit
+if [[ -n '${JQ_PRE_PROGRAM}' ]]; then
+  cat >pre-filter.jq <<EOF
+${JQ_PRE_PROGRAM}
+EOF
+  jq --exit-status --from-file pre-filter.jq >rpc_request <<EOF
+${REQ_JSON}
+EOF
+else
+  cat >rpc_request <<EOF
+${REQ_JSON}
+EOF
+fi
+case ${RUNNER_APP} in
+  grpcurl)
+    cat /dev/stdin >protoset.pb
+    grpcurl -plaintext -d @ -protoset protoset.pb ${ENDPOINT_HOSTPORT} ${RPC} <rpc_request >rpc_reply
+    ;;
+  curl)
+    curl --silent --data @rpc_request --output rpc_reply http://${ENDPOINT_HOSTPORT}/${RPC%.*}/${RPC##*.}
+    ;;
+  *) exit 4 ;;
+esac
+if [[ -n '${JQ_POST_PROGRAM}' ]]; then
+  cat >post-filter.jq <<EOF
+${JQ_POST_PROGRAM}
+EOF
+  jq ${JQ_POST_ARGS[*]} <rpc_reply
+else
+  jq . <rpc_reply
+fi
+" \
+  <"${PROTOSET_FILENAME}" \
+  >"${TMP_REPLY}"
+diff "${TMP_REPLY}" "${GOLDEN_REPLY}"

@@ -1,0 +1,118 @@
+# Copyright 2023 Google LLC
+# Copyright (c) Microsoft Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+
+run_binary(
+    name = "generate_delta",
+    srcs = [
+        ":udf.js",
+    ],
+    outs = [
+        "DELTA_0000000000000005",
+    ],
+    args = [
+        "--udf_file_path",
+        "$(location :udf.js)",
+        "--output_path",
+        "$(location DELTA_0000000000000005)",
+    ],
+    tool = "//tools/udf/udf_generator:udf_delta_file_generator",
+)
+
+run_binary(
+    name = "generate_run_query_delta",
+    srcs = [
+        ":run_query_udf.js",
+    ],
+    outs = [
+        "DELTA_0000000000000006",
+    ],
+    args = [
+        "--udf_file_path",
+        "$(location :run_query_udf.js)",
+        "--output_path",
+        "$(location DELTA_0000000000000006)",
+    ],
+    tool = "//tools/udf/udf_generator:udf_delta_file_generator",
+)
+
+run_binary(
+    name = "generate_run_set_query_uint32_delta",
+    srcs = [
+        ":run_set_query_uint32_udf.js",
+    ],
+    outs = [
+        "DELTA_0000000000000007",
+    ],
+    args = [
+        "--udf_file_path",
+        "$(location :run_set_query_uint32_udf.js)",
+        "--output_path",
+        "$(location DELTA_0000000000000007)",
+    ],
+    tool = "//tools/udf/udf_generator:udf_delta_file_generator",
+)
+
+run_binary(
+    name = "generate_run_set_query_uint64_delta",
+    srcs = [
+        ":run_set_query_uint64_udf.js",
+    ],
+    outs = [
+        "DELTA_0000000000000008",
+    ],
+    args = [
+        "--udf_file_path",
+        "$(location :run_set_query_uint64_udf.js)",
+        "--output_path",
+        "$(location DELTA_0000000000000008)",
+    ],
+    tool = "//tools/udf/udf_generator:udf_delta_file_generator",
+)
+
+run_binary(
+    name = "generate_udf_with_custom_metrics_delta",
+    srcs = [
+        ":udf_with_custom_metrics.js",
+    ],
+    outs = [
+        "DELTA_0000000000000009",
+    ],
+    args = [
+        "--udf_file_path",
+        "$(location :udf_with_custom_metrics.js)",
+        "--output_path",
+        "$(location DELTA_0000000000000009)",
+    ],
+    tool = "//tools/udf/udf_generator:udf_delta_file_generator",
+)
+
+run_binary(
+    name = "generate_microsoft_udf_with_get_nns",
+    srcs = [
+        ":microsoft_udf_with_get_nns.js",
+    ],
+    outs = [
+        "DELTA_0000000000000010",
+    ],
+    args = [
+        "--udf_file_path",
+        "$(location :microsoft_udf_with_get_nns.js)",
+        "--output_path",
+        "$(location DELTA_0000000000000010)",
+    ],
+    tool = "//tools/udf/udf_generator:udf_delta_file_generator",
+)

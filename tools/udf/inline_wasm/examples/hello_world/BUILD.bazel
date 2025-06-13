@@ -1,0 +1,71 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@google_privacysandbox_servers_common//build_defs/cc:wasm.bzl", "cc_inline_wasm_udf_js", "inline_wasm_cc_binary")
+load("//tools/udf/inline_wasm:wasm.bzl", "cc_inline_wasm_udf_delta", "inline_wasm_udf_delta")
+
+inline_wasm_cc_binary(
+    name = "hello_em",
+    srcs = ["hello.cc"],
+    outputs = [
+        "hello.wasm",
+        "hello.js",
+    ],
+    tags = ["manual"],
+)
+
+# builders/tools/bazel-debian run --config=emscripten \
+# //tools/udf/inline_wasm/examples/hello_world:hello_delta
+inline_wasm_udf_delta(
+    name = "hello_delta",
+    custom_udf_js = "my_udf.js",
+    glue_js = ":hello.js",
+    output_file_name = "DELTA_0000000000000006",
+    tags = ["manual"],
+    wasm_binary = ":hello.wasm",
+)
+
+# builders/tools/bazel-debian run --config=emscripten \
+# //tools/udf/inline_wasm/examples/hello_world:hello_delta_wasm_inline_array
+inline_wasm_udf_delta(
+    name = "hello_delta_wasm_inline_array",
+    custom_udf_js = "my_udf.js",
+    glue_js = ":hello.js",
+    output_file_name = "DELTA_0000000000000008",
+    tags = ["manual"],
+    wasm_as_inline_array = True,
+    wasm_binary = ":hello.wasm",
+)
+
+# builders/tools/bazel-debian run --config=emscripten \
+# //tools/udf/inline_wasm/examples/hello_world:hello_delta_cc
+cc_inline_wasm_udf_delta(
+    name = "hello_delta_cc",
+    srcs = ["hello.cc"],
+    custom_udf_js = "my_udf.js",
+    output_file_name = "DELTA_0000000000000007",
+    tags = ["manual"],
+)
+
+# builders/tools/bazel-debian run --config=emscripten \
+# //tools/udf/inline_wasm/examples/hello_world:hello_wasm_js
+#
+# Creates a JS file with inline WASM + emscripten generated glue JS.
+# Custom JS needs to be appended and call `const module = await getModule();`
+# See tools/udf/inline_wasm/examples/hello_world/my_udf.js for a custom JS
+# that loads the WASM module.
+cc_inline_wasm_udf_js(
+    name = "hello_wasm_js",
+    srcs = ["hello.cc"],
+)
