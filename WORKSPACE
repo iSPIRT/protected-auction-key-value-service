@@ -185,12 +185,12 @@ diskann_deps()
 # 3 - Ensure the sha256 hash is empty as zipping is not deterministic and ADO may produce a slightly different archive for you.
 http_archive(
     name = "microsoft_diskann",
+    build_file = "//third_party_deps:microsoft_diskann.BUILD",
     patch_args = ["-p1"],
     patches = [
         "//third_party_deps:microsoft_diskann_mkl.patch",
         "//third_party_deps:microsoft_diskann_noexcept.patch",
     ],
-    build_file = "//third_party_deps:microsoft_diskann.BUILD",
     # commit fc3c6e25b4229016d1b40d2510c327d832b6c25b
     sha256 = "",  # Microsoft Hash must be empty
     strip_prefix = "",  # Microsoft does not include a parent directory in the archive

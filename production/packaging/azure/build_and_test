@@ -109,6 +109,6 @@ fi
 source "${BUILDER}" || fail "Failed to source builder.sh"
 
 printf "==== Running build_and_test_all_in_docker =====\n"
-if ! "${WORKSPACE}"/production/packaging/build_and_test_all_in_docker "${BUILD_AND_TEST_ARGS[@]}" --instance azure --platform azure --mode "${MODE}"; then
+if ! "${WORKSPACE}"/production/packaging/build_and_test_all_in_docker "${BUILD_AND_TEST_ARGS[@]}" --instance azure_microsoft --platform azure_microsoft --mode "${MODE}"; then
   fail "Failed to run build_and_test_all_in_docker"
 fi
