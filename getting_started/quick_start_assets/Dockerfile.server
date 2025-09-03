@@ -12,10 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=ubuntu:20.04
+ARG BASE_IMAGE=ubuntu:22.04
 FROM ${BASE_IMAGE}
 RUN mkdir -p /tmp/realtime
 COPY dist/server /tmp/server
+RUN apt-get update && apt-get install -y \
+    libblas-dev \
+    libblas64-dev \
+    liblapack-dev \
+    liblapack64-dev \
+    libopenblas64-dev \
+    libomp-dev \
+    liblapacke-dev \
+    gfortran \
+    binutils \
+    && rm -rf /var/lib/apt/lists/* \
+    && ldconfig
+
+ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+ENV LD_PRELOAD="/usr/lib/x86_64-linux-gnu/liblapacke.so.3:$LD_PRELOAD"
 
 ENTRYPOINT ["/tmp/server", \
 "--delta_directory=/tmp/deltas", \
