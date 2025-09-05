@@ -69,6 +69,8 @@ ABSL_FLAG(std::string, data_loading_prefix_allowlist, "",
           "Allowlist for blob prefixes.");
 ABSL_FLAG(bool, add_missing_keys_v1, false,
           "Whether to add missing keys for v1.");
+ABSL_FLAG(bool, udf_enable_stacktrace, false,
+          "Whether to enable UDF stacktrace");
 ABSL_FLAG(bool, enable_consented_log, false, "Whether to enable consented log");
 ABSL_FLAG(std::string, consented_debug_token, "", "Consented debug token");
 
@@ -144,6 +146,8 @@ class AzureParameterClient : public ParameterClient {
                               absl::GetFlag(FLAGS_enable_otel_logger)});
     bool_flag_values_.insert({"kv-server-azure-enable-consented-log",
                               absl::GetFlag(FLAGS_enable_consented_log)});
+    bool_flag_values_.insert({"kv-server-azure-udf-enable-stacktrace",
+                              absl::GetFlag(FLAGS_udf_enable_stacktrace)});
     // Insert more bool flag values here.
   }
 
