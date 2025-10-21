@@ -208,7 +208,7 @@ jobs:
         which jq || sudo apt-get update && sudo apt-get install -y jq
         
         # Find and clean SARIF files
-        for sarif_file in /home/azureuser/codescanner/_work/ad-selection-api.bidding-and-auction-servers/results/*.sarif ${{ runner.temp }}/codeql_databases/*/results/*.sarif; do
+        for sarif_file in /home/azureuser/codescanner/_work/protected-auction-key-value-service/*.sarif ${{ runner.temp }}/codeql_databases/*/results/*.sarif; do
           if [ -f "$sarif_file" ]; then
             echo "🔧 Processing: $(basename "$sarif_file")"
             
@@ -265,7 +265,7 @@ jobs:
       with:
         name: codeql-sarif-complete-${{ matrix.language }}
         path: |
-          /home/azureuser/codescanner/_work/ad-selection-api.bidding-and-auction-servers/results/*.sarif
+          /home/azureuser/codescanner/_work/protected-auction-key-value-service/results/*.sarif
           ${{ runner.temp }}/codeql_databases/*/results/*.sarif
         if-no-files-found: warn
     
@@ -276,7 +276,7 @@ jobs:
       with:
         name: codeql-sarif-results-${{ matrix.language }}
         path: |
-          /home/azureuser/codescanner/_work/ad-selection-api.bidding-and-auction-servers/results/*_cleaned.sarif
+          /home/azureuser/codescanner/_work/protected-auction-key-value-service/results/*_cleaned.sarif
           ${{ runner.temp }}/codeql_databases/*/results/*_cleaned.sarif
         if-no-files-found: warn
     
