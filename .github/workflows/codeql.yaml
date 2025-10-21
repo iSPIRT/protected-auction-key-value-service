@@ -64,9 +64,9 @@ jobs:
         # Enable dependency caching for better performance and accuracy
         dependency-caching: true
       env:
-        # Set CodeQL extractor options for better C++ analysis accuracy (no protobuf)
-        CODEQL_EXTRACTOR_CPP_OPTION_INCLUDE_DIRECTORIES: "generated/config:/usr/include:/usr/local/include:services:api:third_party"
-        CODEQL_EXTRACTOR_CPP_OPTION_DEFINE: "ENABLE_CORE_DUMPS=1,ENABLE_PROTECTED_AUDIENCE=1,CODEQL_ANALYSIS=1"
+        # Set CodeQL extractor options for better C++ analysis accuracy
+        CODEQL_EXTRACTOR_CPP_OPTION_INCLUDE_DIRECTORIES: "generated/config:/usr/include:/usr/local/include:components:public:third_party_deps:builders"
+        CODEQL_EXTRACTOR_CPP_OPTION_DEFINE: "ENABLE_CORE_DUMPS=1,ENABLE_PROTECTED_AUDIENCE=1,ENABLE_PROTECTED_APP_SIGNALS=1,ENABLE_KANON=1,CODEQL_ANALYSIS=1"
     - name: Install C++ compiler and essential headers for CodeQL analysis
       if: matrix.language == 'cpp'
       run: |
@@ -84,8 +84,8 @@ jobs:
           libc++-dev \
           libstdc++-12-dev
         
-        # Install key library headers that the project uses
-        echo "Installing project-specific library headers..."
+        # Install key library headers that the Key-Value Service uses
+        echo "Installing Key-Value Service specific library headers..."
         sudo apt-get install -y \
           libprotobuf-dev \
           libgrpc++-dev \
@@ -93,56 +93,73 @@ jobs:
           libgoogle-glog-dev \
           libgflags-dev \
           libssl-dev \
-          libcurl4-openssl-dev || echo "⚠️ Some libraries not available - CodeQL will continue without them"
+          libcurl4-openssl-dev \
+          libblas-dev \
+          liblapack-dev \
+          libopenblas-dev \
+          libomp-dev \
+          libflatbuffers-dev \
+          libzstd-dev \
+          libsnappy-dev || echo "⚠️ Some libraries not available - CodeQL will continue without them"
         
         echo "✅ C++ compiler and headers installed for CodeQL template/macro analysis"
 
     - name: Create configuration header for C++ macro resolution
       if: matrix.language == 'cpp'
       run: |
-        echo "Creating configuration header with common macros for better CodeQL analysis..."
-        echo "Skipping protobuf generation due to missing dependencies - focusing on core C++ source analysis"
+        echo "Creating configuration header with Key-Value Service macros for better CodeQL analysis..."
+        echo "Configuring for Protected Auction Key-Value Service with multi-platform support"
         
         # Create configuration directory and header for better macro resolution
         mkdir -p generated/config
         
-        # Create configuration header with common macros (line by line to avoid YAML issues)
-        echo "// CodeQL Analysis Configuration Header" > generated/config/codeql_config.h
+        # Create configuration header with repo-specific macros
+        echo "// CodeQL Analysis Configuration Header for Protected Auction Key-Value Service" > generated/config/codeql_config.h
         echo "#ifndef CODEQL_CONFIG_H" >> generated/config/codeql_config.h
         echo "#define CODEQL_CONFIG_H" >> generated/config/codeql_config.h
         echo "" >> generated/config/codeql_config.h
-        echo "// Common feature macros" >> generated/config/codeql_config.h
+        echo "// Key-Value Service feature macros" >> generated/config/codeql_config.h
         echo "#define ENABLE_CORE_DUMPS 1" >> generated/config/codeql_config.h
         echo "#define ENABLE_PROTECTED_AUDIENCE 1" >> generated/config/codeql_config.h
         echo "#define ENABLE_PROTECTED_APP_SIGNALS 1" >> generated/config/codeql_config.h
         echo "#define ENABLE_KANON 1" >> generated/config/codeql_config.h
+        echo "#define CODEQL_ANALYSIS 1" >> generated/config/codeql_config.h
         echo "" >> generated/config/codeql_config.h
-        echo "// Common Google/Abseil macros" >> generated/config/codeql_config.h
+        echo "// Platform configuration macros" >> generated/config/codeql_config.h
+        echo "#define CLOUD_PLATFORM_AWS 1" >> generated/config/codeql_config.h
+        echo "#define CLOUD_PLATFORM_GCP 1" >> generated/config/codeql_config.h
+        echo "#define CLOUD_PLATFORM_AZURE 1" >> generated/config/codeql_config.h
+        echo "" >> generated/config/codeql_config.h
+        echo "// Privacy Sandbox & Bazel macros" >> generated/config/codeql_config.h
         echo "#define ABSL_HAVE_STD_STRING_VIEW 1" >> generated/config/codeql_config.h
         echo "#define GOOGLE_GLOG_DLL_DECL" >> generated/config/codeql_config.h
         echo "#define GFLAGS_DLL_DECL" >> generated/config/codeql_config.h
+        echo "#define BAZEL_BUILD 1" >> generated/config/codeql_config.h
         echo "" >> generated/config/codeql_config.h
         echo "#endif // CODEQL_CONFIG_H" >> generated/config/codeql_config.h
         
-        echo "✅ Configuration header created - CodeQL will analyze C++ source files without protobuf dependencies"
+        echo "✅ Configuration header created - CodeQL will analyze Protected Auction Key-Value Service C++ components"
 
     - name: Verify C++ source structure for CodeQL analysis
       if: matrix.language == 'cpp'
       run: |
-        echo "Verifying C++ source code structure for CodeQL analysis (without protobuf)..."
+        echo "Verifying Key-Value Service C++ source code structure for CodeQL analysis..."
         
         echo "=== Core C++ Source Files ==="
-        echo "Main service source files:"
-        find services/ -name "*.cc" -o -name "*.cpp" | head -10
-        echo "Service header files:"
-        find services/ -name "*.h" -o -name "*.hpp" | head -10
-        echo "Third-party C++ files:"
-        find third_party/ -name "*.cc" -o -name "*.cpp" | head -5
+        echo "Component source files:"
+        find components/ -name "*.cc" -o -name "*.cpp" | head -10
+        echo "Component header files:"
+        find components/ -name "*.h" -o -name "*.hpp" | head -10
+        echo "Public API files:"
+        find public/ -name "*.cc" -o -name "*.cpp" | head -5
+        echo "Public API headers:"
+        find public/ -name "*.h" -o -name "*.hpp" | head -5
         
         echo "=== File Counts ==="
         echo "Total C++ source files: $(find . -name "*.cc" -o -name "*.cpp" | wc -l)"
         echo "Total header files: $(find . -name "*.h" -o -name "*.hpp" | wc -l)"
-        echo "API proto definitions: $(find api/ -name "*.proto" | wc -l) (will be analyzed as text)"
+        echo "Proto definitions: $(find public/ -name "*.proto" | wc -l) (will be analyzed as text)"
+        echo "BUILD.bazel files: $(find . -name "BUILD.bazel" | wc -l)"
         echo "Configuration headers: $(find generated/config/ -name "*.h" 2>/dev/null | wc -l || echo 0)"
         
         echo "=== Include Directory Verification ==="
@@ -150,10 +167,11 @@ jobs:
         echo "Available library headers:"
         echo "- Standard library: $(ls /usr/include/c++/*/iostream 2>/dev/null | wc -l || echo 0) found"
         echo "- System headers: $(ls /usr/include/sys/ 2>/dev/null | wc -l || echo 0) files"
-        echo "- Local service headers: $(find services/ -name "*.h" | wc -l)"
+        echo "- Component headers: $(find components/ -name "*.h" | wc -l)"
+        echo "- Public API headers: $(find public/ -name "*.h" | wc -l)"
         echo "- Configuration headers: $(find generated/config/ -name "*.h" 2>/dev/null | wc -l || echo 0)"
         
-        echo "✅ C++ source structure verified - CodeQL ready to analyze without protobuf dependencies"
+        echo "✅ Key-Value Service C++ structure verified - CodeQL ready to analyze"
 
     - name: Verify CodeQL configuration for direct source analysis
       if: matrix.language == 'cpp'
@@ -162,8 +180,8 @@ jobs:
         echo "Note: Compilation database not needed - CodeQL analyzes source directly"
         
         echo "CodeQL extractor configuration:"
-        echo "- Include directories: generated/config:/usr/include:/usr/local/include:services:api:third_party"
-        echo "- Preprocessor defines: ENABLE_CORE_DUMPS=1,ENABLE_PROTECTED_AUDIENCE=1,CODEQL_ANALYSIS=1"
+        echo "- Include directories: generated/config:/usr/include:/usr/local/include:components:public:third_party_deps:builders"
+        echo "- Preprocessor defines: ENABLE_CORE_DUMPS=1,ENABLE_PROTECTED_AUDIENCE=1,ENABLE_PROTECTED_APP_SIGNALS=1,ENABLE_KANON=1,CODEQL_ANALYSIS=1"
         echo "- Build mode: none (direct source analysis)"
         
         echo "✅ CodeQL configured for optimal direct source code analysis"
@@ -176,11 +194,11 @@ jobs:
         echo "No compilation artifacts needed - CodeQL creates its own AST"
         
         echo "C++ source files that will be analyzed:"
-        find services/ -name "*.cc" -o -name "*.cpp" | head -10
+        find components/ -name "*.cc" -o -name "*.cpp" | head -10
         echo "Header files available for analysis:"
-        find services/ -name "*.h" -o -name "*.hpp" | head -10
+        find components/ -name "*.h" -o -name "*.hpp" | head -10
         echo "API definitions:"
-        find api/ -name "*.proto" | head -5
+        find public/ -name "*.proto" | head -5
         
         echo "✅ Source code ready for CodeQL database creation"
 
@@ -208,7 +226,7 @@ jobs:
         which jq || sudo apt-get update && sudo apt-get install -y jq
         
         # Find and clean SARIF files
-        for sarif_file in /home/azureuser/codescanner/_work/protected-auction-key-value-service/*.sarif ${{ runner.temp }}/codeql_databases/*/results/*.sarif; do
+        for sarif_file in ${{ github.workspace }}/*.sarif ${{ runner.temp }}/codeql_databases/*/results/*.sarif; do
           if [ -f "$sarif_file" ]; then
             echo "🔧 Processing: $(basename "$sarif_file")"
             
@@ -265,7 +283,7 @@ jobs:
       with:
         name: codeql-sarif-complete-${{ matrix.language }}
         path: |
-          /home/azureuser/codescanner/_work/protected-auction-key-value-service/results/*.sarif
+          ${{ github.workspace }}/results/*.sarif
           ${{ runner.temp }}/codeql_databases/*/results/*.sarif
         if-no-files-found: warn
     
@@ -276,7 +294,7 @@ jobs:
       with:
         name: codeql-sarif-results-${{ matrix.language }}
         path: |
-          /home/azureuser/codescanner/_work/protected-auction-key-value-service/results/*_cleaned.sarif
+          ${{ github.workspace }}/results/*_cleaned.sarif
           ${{ runner.temp }}/codeql_databases/*/results/*_cleaned.sarif
         if-no-files-found: warn
     
