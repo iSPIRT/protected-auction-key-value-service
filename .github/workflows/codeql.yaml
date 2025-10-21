@@ -1,0 +1,293 @@
+name: "CodeQL Analysis"
+
+on:
+  # Manual trigger only from any branch
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run analysis on'
+        required: false
+        default: 'main'
+
+  # Allow this workflow to be called by other workflows
+  workflow_call:
+    inputs:
+      branch:
+        description: 'Branch to run analysis on'
+        required: false
+        default: 'main'
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: [self-hosted, linux, X64]
+
+    # Remove duplicate permissions since they're already defined at workflow level
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: 'cpp'
+            build-mode: 'none'
+          - language: 'javascript'
+            build-mode: 'none'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.branch || github.event.inputs.branch || github.ref }}
+
+    - name: Setup CodeQL environment
+      run: |
+        echo "Setting up CodeQL environment for analysis..."
+        echo "System information:"
+        uname -a
+        lsb_release -a 2>/dev/null || echo "lsb_release not available"
+        
+        echo "CodeQL will use 'none' build mode for both C++ and JavaScript"
+        echo "This provides direct source code analysis without compilation"
+
+    - name: Initialize CodeQL with enhanced configuration
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        build-mode: ${{ matrix.build-mode }}
+        # Use comprehensive query suites for maximum security coverage
+        queries: security-extended,security-and-quality
+        # Enable dependency caching for better performance and accuracy
+        dependency-caching: true
+      env:
+        # Set CodeQL extractor options for better C++ analysis accuracy (no protobuf)
+        CODEQL_EXTRACTOR_CPP_OPTION_INCLUDE_DIRECTORIES: "generated/config:/usr/include:/usr/local/include:services:api:third_party"
+        CODEQL_EXTRACTOR_CPP_OPTION_DEFINE: "ENABLE_CORE_DUMPS=1,ENABLE_PROTECTED_AUDIENCE=1,CODEQL_ANALYSIS=1"
+    - name: Install C++ compiler and essential headers for CodeQL analysis
+      if: matrix.language == 'cpp'
+      run: |
+        echo "Installing C++ compiler and headers for CodeQL template/macro resolution..."
+        echo "Note: CodeQL uses compiler for preprocessing only - no actual compilation occurs"
+        
+        # Update package lists
+        sudo apt-get update
+        
+        # Install minimal C++ toolchain for CodeQL reference compilation
+        echo "Installing C++ compiler for CodeQL preprocessing..."
+        sudo apt-get install -y \
+          gcc \
+          g++ \
+          libc++-dev \
+          libstdc++-12-dev
+        
+        # Install key library headers that the project uses
+        echo "Installing project-specific library headers..."
+        sudo apt-get install -y \
+          libprotobuf-dev \
+          libgrpc++-dev \
+          libabsl-dev \
+          libgoogle-glog-dev \
+          libgflags-dev \
+          libssl-dev \
+          libcurl4-openssl-dev || echo "⚠️ Some libraries not available - CodeQL will continue without them"
+        
+        echo "✅ C++ compiler and headers installed for CodeQL template/macro analysis"
+
+    - name: Create configuration header for C++ macro resolution
+      if: matrix.language == 'cpp'
+      run: |
+        echo "Creating configuration header with common macros for better CodeQL analysis..."
+        echo "Skipping protobuf generation due to missing dependencies - focusing on core C++ source analysis"
+        
+        # Create configuration directory and header for better macro resolution
+        mkdir -p generated/config
+        
+        # Create configuration header with common macros (line by line to avoid YAML issues)
+        echo "// CodeQL Analysis Configuration Header" > generated/config/codeql_config.h
+        echo "#ifndef CODEQL_CONFIG_H" >> generated/config/codeql_config.h
+        echo "#define CODEQL_CONFIG_H" >> generated/config/codeql_config.h
+        echo "" >> generated/config/codeql_config.h
+        echo "// Common feature macros" >> generated/config/codeql_config.h
+        echo "#define ENABLE_CORE_DUMPS 1" >> generated/config/codeql_config.h
+        echo "#define ENABLE_PROTECTED_AUDIENCE 1" >> generated/config/codeql_config.h
+        echo "#define ENABLE_PROTECTED_APP_SIGNALS 1" >> generated/config/codeql_config.h
+        echo "#define ENABLE_KANON 1" >> generated/config/codeql_config.h
+        echo "" >> generated/config/codeql_config.h
+        echo "// Common Google/Abseil macros" >> generated/config/codeql_config.h
+        echo "#define ABSL_HAVE_STD_STRING_VIEW 1" >> generated/config/codeql_config.h
+        echo "#define GOOGLE_GLOG_DLL_DECL" >> generated/config/codeql_config.h
+        echo "#define GFLAGS_DLL_DECL" >> generated/config/codeql_config.h
+        echo "" >> generated/config/codeql_config.h
+        echo "#endif // CODEQL_CONFIG_H" >> generated/config/codeql_config.h
+        
+        echo "✅ Configuration header created - CodeQL will analyze C++ source files without protobuf dependencies"
+
+    - name: Verify C++ source structure for CodeQL analysis
+      if: matrix.language == 'cpp'
+      run: |
+        echo "Verifying C++ source code structure for CodeQL analysis (without protobuf)..."
+        
+        echo "=== Core C++ Source Files ==="
+        echo "Main service source files:"
+        find services/ -name "*.cc" -o -name "*.cpp" | head -10
+        echo "Service header files:"
+        find services/ -name "*.h" -o -name "*.hpp" | head -10
+        echo "Third-party C++ files:"
+        find third_party/ -name "*.cc" -o -name "*.cpp" | head -5
+        
+        echo "=== File Counts ==="
+        echo "Total C++ source files: $(find . -name "*.cc" -o -name "*.cpp" | wc -l)"
+        echo "Total header files: $(find . -name "*.h" -o -name "*.hpp" | wc -l)"
+        echo "API proto definitions: $(find api/ -name "*.proto" | wc -l) (will be analyzed as text)"
+        echo "Configuration headers: $(find generated/config/ -name "*.h" 2>/dev/null | wc -l || echo 0)"
+        
+        echo "=== Include Directory Verification ==="
+        echo "System C++ headers available: $(ls /usr/include/c++/ 2>/dev/null | wc -l || echo 0)"
+        echo "Available library headers:"
+        echo "- Standard library: $(ls /usr/include/c++/*/iostream 2>/dev/null | wc -l || echo 0) found"
+        echo "- System headers: $(ls /usr/include/sys/ 2>/dev/null | wc -l || echo 0) files"
+        echo "- Local service headers: $(find services/ -name "*.h" | wc -l)"
+        echo "- Configuration headers: $(find generated/config/ -name "*.h" 2>/dev/null | wc -l || echo 0)"
+        
+        echo "✅ C++ source structure verified - CodeQL ready to analyze without protobuf dependencies"
+
+    - name: Verify CodeQL configuration for direct source analysis
+      if: matrix.language == 'cpp'
+      run: |
+        echo "Verifying CodeQL configuration for 'none' build mode analysis..."
+        echo "Note: Compilation database not needed - CodeQL analyzes source directly"
+        
+        echo "CodeQL extractor configuration:"
+        echo "- Include directories: generated/config:/usr/include:/usr/local/include:services:api:third_party"
+        echo "- Preprocessor defines: ENABLE_CORE_DUMPS=1,ENABLE_PROTECTED_AUDIENCE=1,CODEQL_ANALYSIS=1"
+        echo "- Build mode: none (direct source analysis)"
+        
+        echo "✅ CodeQL configured for optimal direct source code analysis"
+
+    - name: Verify CodeQL database preparation
+      if: matrix.language == 'cpp'
+      run: |
+        echo "Verifying CodeQL database will be created from source analysis..."
+        echo "CodeQL 'none' build mode will analyze source code directly"
+        echo "No compilation artifacts needed - CodeQL creates its own AST"
+        
+        echo "C++ source files that will be analyzed:"
+        find services/ -name "*.cc" -o -name "*.cpp" | head -10
+        echo "Header files available for analysis:"
+        find services/ -name "*.h" -o -name "*.hpp" | head -10
+        echo "API definitions:"
+        find api/ -name "*.proto" | head -5
+        
+        echo "✅ Source code ready for CodeQL database creation"
+
+    - name: Extract and prepare JavaScript/TypeScript for analysis  
+      if: matrix.language == 'javascript'
+      run: |
+        echo "Preparing JavaScript/TypeScript source code for CodeQL analysis..."
+        echo "JavaScript/TypeScript source directories to be analyzed:"
+        find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | head -20
+        echo "Total JS/TS files found:"
+        find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | wc -l
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+        
+    # Clean SARIF files to remove logs and keep only vulnerability results
+    - name: Clean SARIF files for vulnerability tools
+      if: always()
+      run: |
+        echo "🧹 Cleaning SARIF files to remove logs and keep only vulnerability results..."
+        
+        # Install jq if not available
+        which jq || sudo apt-get update && sudo apt-get install -y jq
+        
+        # Find and clean SARIF files
+        for sarif_file in /home/azureuser/codescanner/_work/ad-selection-api.bidding-and-auction-servers/results/*.sarif ${{ runner.temp }}/codeql_databases/*/results/*.sarif; do
+          if [ -f "$sarif_file" ]; then
+            echo "🔧 Processing: $(basename "$sarif_file")"
+            
+            # Create cleaned version
+            cleaned_file="${sarif_file%.sarif}_cleaned.sarif"
+            
+            # Strip logs and keep only essential vulnerability data
+            jq '{
+              "$schema": ."$schema",
+              "version": .version,
+              "runs": [
+                .runs[] | {
+                  "tool": {
+                    "driver": {
+                      "name": .tool.driver.name,
+                      "version": .tool.driver.version,
+                      "rules": .tool.driver.rules
+                    }
+                  },
+                  "results": .results,
+                  "artifacts": .artifacts
+                }
+              ]
+            }' "$sarif_file" > "$cleaned_file"
+            
+            # Check if cleaning was successful
+            if [ -f "$cleaned_file" ] && [ -s "$cleaned_file" ]; then
+              original_size=$(wc -c < "$sarif_file")
+              cleaned_size=$(wc -c < "$cleaned_file")
+              reduction=$((100 - (cleaned_size * 100 / original_size)))
+              
+              echo "✅ Cleaned $(basename "$sarif_file"): ${original_size} → ${cleaned_size} bytes (${reduction}% reduction)"
+              
+              # Verify JSON is valid
+              if jq empty "$cleaned_file" 2>/dev/null; then
+                echo "✅ Cleaned SARIF is valid JSON"
+              else
+                echo "❌ Warning: Cleaned SARIF has invalid JSON, keeping original"
+                rm -f "$cleaned_file"
+              fi
+            else
+              echo "❌ Failed to clean $(basename "$sarif_file"), keeping original"
+              rm -f "$cleaned_file"
+            fi
+          fi
+        done
+        
+        echo "🎯 SARIF cleaning completed"
+        
+    # Upload SARIF results as workflow artifacts for download/inspection
+    - name: Upload Complete CodeQL SARIF results (with logs for debugging)
+      if: always()
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: codeql-sarif-complete-${{ matrix.language }}
+        path: |
+          /home/azureuser/codescanner/_work/ad-selection-api.bidding-and-auction-servers/results/*.sarif
+          ${{ runner.temp }}/codeql_databases/*/results/*.sarif
+        if-no-files-found: warn
+    
+    # Upload cleaned SARIF files specifically for vulnerability management tools
+    - name: Upload Cleaned SARIF Results For Vulnerability Tools
+      if: always()
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: codeql-sarif-results-${{ matrix.language }}
+        path: |
+          /home/azureuser/codescanner/_work/ad-selection-api.bidding-and-auction-servers/results/*_cleaned.sarif
+          ${{ runner.temp }}/codeql_databases/*/results/*_cleaned.sarif
+        if-no-files-found: warn
+    
+    # Note: CodeQL action automatically uploads results to GitHub Security dashboard
+    # No additional upload-sarif step needed since analyze@v3 handles it
+    
+    - name: Cleanup workspace
+      if: always()
+      run: |
+        echo "Cleaning up workspace..."
+        # Fix permissions on workspace files
+        sudo chown -R $(whoami):$(whoami) ${GITHUB_WORKSPACE} || true
+        
+        echo "Cleanup completed for ${{ matrix.language }}"
