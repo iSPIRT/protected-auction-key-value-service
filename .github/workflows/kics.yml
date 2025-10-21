@@ -1,22 +1,13 @@
 name: "KICS IaC Security Scan"
 
 on:
-  # Manual trigger only from any branch/environment
+  # Manual trigger only from any branch
   workflow_dispatch:
     inputs:
       branch:
         description: 'Branch to run KICS scan on'
         required: false
         default: 'main'
-      environment:
-        description: 'Environment to run in'
-        required: false
-        default: 'development'
-        type: choice
-        options:
-        - development
-        - staging
-        - production
       scan_path:
         description: 'Path to scan for IaC files'
         required: false
@@ -30,11 +21,6 @@ on:
         description: 'Branch to run KICS scan on'
         required: false
         default: 'main'
-        type: string
-      environment:
-        description: 'Environment to run in'
-        required: false
-        default: 'development'
         type: string
       scan_path:
         description: 'Path to scan for IaC files'
@@ -81,7 +67,7 @@ jobs:
         with:
           path: ${{ inputs.scan_path || github.event.inputs.scan_path || '.' }}
           output_path: kics-results/
-          platform_type: terraform,dockerfile,kubernetes,cloudformation,ansible,bicep,crossplane,grpc,openapi,serverlessfw,dockercompose
+          platform_type: Terraform,Dockerfile,Kubernetes,CloudFormation,Ansible,Bicep,Crossplane,GRPC,OpenAPI,DockerCompose,AzureResourceManager,CICD,ServerlessFW
           output_formats: 'sarif,json,html'
           exclude_paths: 'builders/etc/,tools/debug/,.git/,node_modules/,third_party/'
           exclude_severities: 'info'
@@ -251,7 +237,7 @@ jobs:
           else
             echo "✅ No critical security issues found in Infrastructure as Code"
           fi
-          
+
       - name: Cleanup build artifacts
         if: always()
         run: |
