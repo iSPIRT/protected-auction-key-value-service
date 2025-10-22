@@ -308,6 +308,15 @@ jobs:
         TIMESTAMP=$(date +%Y-%m-%d)
         LANGUAGE=${{ matrix.language }}
         SARIF_FILES=$(find "${{ github.workspace }}/results" "${{ runner.temp }}/codeql_databases" -type f \( -name "*_cleaned.sarif" -o -name "*.sarif" \) 2>/dev/null)
+        if [ -z "$SARIF_FILES" ]; then
+          echo "⚠️ No cleaned SARIF files found, falling back to regular SARIF"
+          SARIF_FILES=$(find "$CODEQL_SARIF_DIR" -type f -name "*.sarif" 2>/dev/null)
+        fi
+    
+        if [ -z "$SARIF_FILES" ]; then
+          echo "❌ No SARIF files found for upload, exiting gracefully"
+          exit 0
+        fi
         for SARIF_FILE in $SARIF_FILES; do
           echo "Uploading SARIF file: $SARIF_FILE"
           curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
