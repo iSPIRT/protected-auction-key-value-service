@@ -226,7 +226,7 @@ jobs:
         which jq || sudo apt-get update && sudo apt-get install -y jq
         
         # Find and clean SARIF files
-        for sarif_file in ${{ github.workspace }}/*.sarif ${{ runner.temp }}/codeql_databases/*/results/*.sarif; do
+        for sarif_file in /home/azureuser/kv-server-repo-runner/_work/protected-auction-key-value-service/results/*.sarif ${{ runner.temp }}/codeql_databases/*/results/*.sarif; do
           if [ -f "$sarif_file" ]; then
             echo "🔧 Processing: $(basename "$sarif_file")"
             
@@ -277,13 +277,14 @@ jobs:
         echo "🎯 SARIF cleaning completed"
         
     # Upload SARIF results as workflow artifacts for download/inspection
+    #Todo: Fix Hard coded path
     - name: Upload Complete CodeQL SARIF results (with logs for debugging)
       if: always()
       uses: actions/upload-artifact@v4.6.2
       with:
         name: codeql-sarif-complete-${{ matrix.language }}
         path: |
-          ${{ github.workspace }}/results/*.sarif
+          /home/azureuser/kv-server-repo-runner/_work/protected-auction-key-value-service/results/*.sarif 
           ${{ runner.temp }}/codeql_databases/*/results/*.sarif
         if-no-files-found: warn
     
@@ -294,7 +295,7 @@ jobs:
       with:
         name: codeql-sarif-results-${{ matrix.language }}
         path: |
-          ${{ github.workspace }}/results/*_cleaned.sarif
+          /home/azureuser/kv-server-repo-runner/_work/protected-auction-key-value-service/results/*_cleaned.sarif
           ${{ runner.temp }}/codeql_databases/*/results/*_cleaned.sarif
         if-no-files-found: warn
     
@@ -307,28 +308,23 @@ jobs:
         TIMESTAMP=$(date +%Y-%m-%d)
         LANGUAGE=${{ matrix.language }}
         SARIF_FILES=$(find "${{ github.workspace }}/results" "${{ runner.temp }}/codeql_databases" -type f \( -name "*_cleaned.sarif" -o -name "*.sarif" \) 2>/dev/null)
-
         for SARIF_FILE in $SARIF_FILES; do
           echo "Uploading SARIF file: $SARIF_FILE"
-        
-        curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
-          -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
-          -H "accept: application/json" \
-          -F "scan_type=SARIF" \
-          -F "file=@${SARIF_FILE}" \
-          -F "engagement=${{ secrets.DEFECTDOJO_CODEQL_ENGAGEMENT_ID }}" \
-          -F "scan_date=${TIMESTAMP}" \
-          -F "active=true" \
-          -F "verified=false" \
-          -F "minimum_severity=Info" \
-          -F "close_old_findings=true" \
-          -F "push_to_jira=false" \
-          -F "test_title=CodeQL Scan - ${LANGUAGE}" \
+          curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
+            -H "accept: application/json" \
+            -F "scan_type=SARIF" \
+            -F "file=@${SARIF_FILE}" \
+            -F "engagement=${{ secrets.DEFECTDOJO_CODEQL_ENGAGEMENT_ID }}" \
+            -F "scan_date=${TIMESTAMP}" \
+            -F "active=true" \
+            -F "verified=false" \
+            -F "minimum_severity=Info" \
+            -F "close_old_findings=true" \
+            -F "push_to_jira=false" \
+            -F "test_title=CodeQL Scan - ${LANGUAGE}" \
+            || echo "❌ Failed to upload $SARIF_FILE, continuing with next"
       continue-on-error: true
-
-    - name: "DefectDojo upload status"
-      if: success()
-      run: echo "Successfully uploaded SARIF report to DefectDojo"
     
     - name: Cleanup workspace
       if: always()
