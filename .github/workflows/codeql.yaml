@@ -307,19 +307,33 @@ jobs:
       run: |
         TIMESTAMP=$(date +%Y-%m-%d)
         LANGUAGE=${{ matrix.language }}
-        SARIF_FILES=$(find "${{ github.workspace }}/results" "${{ runner.temp }}/codeql_databases" -type f \( -name "*_cleaned.sarif" -o -name "*.sarif" \) 2>/dev/null)
+        
+        # First, try the temporary hardcoded path (works on this runner)
+        SARIF_FILES=$(find /home/azureuser/kv-server-repo-runner/_work/protected-auction-key-value-service/results -type f -name "*_cleaned.sarif" 2>/dev/null)
+    
+        # Fallback: check runner.temp CodeQL database directories
         if [ -z "$SARIF_FILES" ]; then
-          echo "⚠️ No cleaned SARIF files found, falling back to regular SARIF"
-          SARIF_FILES=$(find "$CODEQL_SARIF_DIR" -type f -name "*.sarif" 2>/dev/null)
+          SARIF_FILES=$(find "${{ runner.temp }}/codeql_databases" -type f -name "*_cleaned.sarif" 2>/dev/null)
+        fi
+    
+        # If still empty, fallback to regular SARIF files
+        if [ -z "$SARIF_FILES" ]; then
+          echo "⚠️ No cleaned SARIF files found, falling back to raw SARIF files"
+          SARIF_FILES=$(find /home/azureuser/kv-server-repo-runner/_work/protected-auction-key-value-service/results -type f -name "*.sarif" 2>/dev/null)
+          SARIF_FILES+=$(find "${{ runner.temp }}/codeql_databases" -type f -name "*.sarif" 2>/dev/null)
         fi
     
         if [ -z "$SARIF_FILES" ]; then
           echo "❌ No SARIF files found for upload, exiting gracefully"
           exit 0
         fi
+    
+        echo "✅ Found SARIF file(s) for language $LANGUAGE:"
+        echo "$SARIF_FILES"
+    
         for SARIF_FILE in $SARIF_FILES; do
           echo "Uploading SARIF file: $SARIF_FILE"
-          curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
+          curl -f -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
             -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
             -H "accept: application/json" \
             -F "scan_type=SARIF" \
