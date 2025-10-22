@@ -347,6 +347,7 @@ jobs:
             -F "push_to_jira=false" \
             -F "test_title=CodeQL Scan - ${LANGUAGE}" \
             || echo "❌ Failed to upload $SARIF_FILE, continuing with next"
+        done
       continue-on-error: true
     
     - name: Cleanup workspace
