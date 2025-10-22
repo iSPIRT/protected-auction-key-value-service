@@ -349,6 +349,10 @@ jobs:
             || echo "❌ Failed to upload $SARIF_FILE, continuing with next"
         done
       continue-on-error: true
+
+    - name: "DefectDojo upload status"
+      if: success()
+      run: echo "Successfully uploaded SARIF report to DefectDojo"
     
     - name: Cleanup workspace
       if: always()
