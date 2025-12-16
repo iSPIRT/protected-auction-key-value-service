@@ -29,7 +29,7 @@ absl::StatusOr<uint8_t> StringToUint8(absl::string_view str) {
   // SimpleAtoi doesn't support 8 bit conversion.
   uint8_t val8 = 0;
   uint32_t val = 0;
-  if (absl::SimpleAtoi(str, &val) && (val8 = val) == val) {
+  if (absl::SimpleAtoi(str, &val) && val <= 255 && (val8 = static_cast<uint8_t>(val)) == val) {
     return val8;
   }
   return absl::InvalidArgumentError("String is not a uint8.");
