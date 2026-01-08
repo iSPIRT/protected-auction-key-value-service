@@ -13,18 +13,20 @@ python_deps()
 
 python_register_toolchains("//builders/bazel")
 
-# Microsoft - we have mirrored this repo, if this commit changes we should resolve this by:
-# 1 - Take the upstream commit (unless ours is newer) and update the URL query param to use the updated hash.
-# 2 - Ensure strip_prefix is still empty, ADO does not include a parent directory in the archive.
-# 3 - Ensure the sha256 hash is empty as zipping is not deterministic and ADO may produce a slightly different archive for you.
+# Reference to the active data-plane-shared-libraries repository
+# To update to a newer commit:
+# 1 - Get the latest commit hash from https://github.com/iSPIRT/ad-selection-api.data-plane-shared-libraries
+# 2 - Update the commit hash in the URL below
+# 3 - Update the strip_prefix to match: data-plane-shared-libraries-<first 7 chars of commit>
+# 4 - Optionally update sha256 (can be left empty initially, then Bazel will provide the correct hash)
 http_archive(
     name = "google_privacysandbox_servers_common",
-    # commit 8e9e636a104241a7389616077efb60ff73342fd0 2025-04-09
-    sha256 = "",  # Microsoft Hash must be empty
-    strip_prefix = "",  # Microsoft does not include a parent directory in the archive
-    type = "zip",
+    # Using the latest commit from main branch
+    # Visit https://github.com/iSPIRT/ad-selection-api.data-plane-shared-libraries/commits/main to get latest commit
+    sha256 = "",  # Leave empty initially; Bazel will report the correct hash on first build
+    strip_prefix = "data-plane-shared-libraries-main",
     urls = [
-        "file:///src/workspace/third_party_deps/google_privacysandbox_servers_common_e3807bfe.zip",
+        "https://github.com/iSPIRT/ad-selection-api.data-plane-shared-libraries/archive/refs/heads/main.tar.gz",
     ],
 )
 
