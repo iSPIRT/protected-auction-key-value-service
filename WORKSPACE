@@ -24,7 +24,7 @@ http_archive(
     # Using the latest commit from main branch
     # Visit https://github.com/iSPIRT/ad-selection-api.data-plane-shared-libraries/commits/main to get latest commit
     sha256 = "",  # Leave empty initially; Bazel will report the correct hash on first build
-    strip_prefix = "data-plane-shared-libraries-main",
+    strip_prefix = "ad-selection-api.data-plane-shared-libraries-main",
     urls = [
         "https://github.com/iSPIRT/ad-selection-api.data-plane-shared-libraries/archive/refs/heads/main.tar.gz",
     ],
