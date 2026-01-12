@@ -124,7 +124,7 @@ build:gcp_instance --@google_privacysandbox_servers_common//:instance=gcp
 
 # --config azure_microsoft_instance: builds assuming the instance is on Azure
 build:azure_microsoft_instance --//:instance=azure_microsoft
-build:azure_microsoft_instance --@google_privacysandbox_servers_common//:instance=azure_microsoft
+build:azure_microsoft_instance --@google_privacysandbox_servers_common//:instance=azure
 
 # --config local_platform: builds the service to run locally
 build:local_platform --//:platform=local
@@ -139,7 +139,7 @@ build:gcp_platform --@google_privacysandbox_servers_common//:platform=gcp
 
 # --config azure_microsoft_platform: builds the service to run with Azure
 build:azure_microsoft_platform --//:platform=azure_microsoft
-build:azure_microsoft_platform --@google_privacysandbox_servers_common//:platform=azure_microsoft
+build:azure_microsoft_platform --@google_privacysandbox_servers_common//:platform=azure
 
 # --config prod_mode: builds the service in prod mode
 build:prod_mode --//:mode=prod

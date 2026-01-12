@@ -1,0 +1,22 @@
+diff --git a/src/public/core/interface/cloud_platform.h b/src/public/core/interface/cloud_platform.h
+index 0000000..0000001 100644
+--- a/src/public/core/interface/cloud_platform.h
++++ b/src/public/core/interface/cloud_platform.h
+@@ -24,6 +24,7 @@ namespace privacy_sandbox::server_common {
+ inline constexpr std::string_view kLocal = "local";
+ inline constexpr std::string_view kGcp = "GCP";
+ inline constexpr std::string_view kAws = "AWS";
++inline constexpr std::string_view kAzureStr = "Azure";
+ 
+ // Declare cloud platforms supported.
+ // Need to update key refresh monitoring code in src/metric/key_fetch.h when
+@@ -44,6 +45,8 @@ constexpr inline std::string_view CloudPlatformEnumToString(
+       return kGcp;
+     case CloudPlatform::kAws:
+       return kAws;
++    case CloudPlatform::kAzure:
++      return kAzureStr;
+   }
+ }
+ 
+
