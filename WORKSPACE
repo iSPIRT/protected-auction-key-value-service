@@ -13,18 +13,12 @@ python_deps()
 
 python_register_toolchains("//builders/bazel")
 
-# Microsoft - we have mirrored this repo, if this commit changes we should resolve this by:
-# 1 - Take the upstream commit (unless ours is newer) and update the URL query param to use the updated hash.
-# 2 - Ensure strip_prefix is still empty, ADO does not include a parent directory in the archive.
-# 3 - Ensure the sha256 hash is empty as zipping is not deterministic and ADO may produce a slightly different archive for you.
 http_archive(
     name = "google_privacysandbox_servers_common",
-    # commit 8e9e636a104241a7389616077efb60ff73342fd0 2025-04-09
     sha256 = "",  # Microsoft Hash must be empty
-    strip_prefix = "",  # Microsoft does not include a parent directory in the archive
-    type = "zip",
+    strip_prefix = "ad-selection-api.data-plane-shared-libraries-main",
     urls = [
-        "file:///src/workspace/third_party_deps/google_privacysandbox_servers_common_e3807bfe.zip",
+        "https://github.com/iSPIRT/ad-selection-api.data-plane-shared-libraries/archive/refs/heads/main.tar.gz",
     ],
 )
 
