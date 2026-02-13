@@ -39,4 +39,4 @@ export GRPC_DNS_RESOLVER=native
 export PS_VERBOSITY=10
 
 # Start the server first.
-"/server" --delta_directory=$AZURE_LOCAL_DATA_DIR --realtime_directory=$AZURE_LOCAL_REALTIME_DATA_DIR --launch_hook= --logging_verbosity_level=$PS_VERBOSITY --public_key_endpoint=$PUBLIC_KEY_ENDPOINT --stderrthreshold=0
+"/server" --delta_directory=$AZURE_LOCAL_DATA_DIR --realtime_directory=$AZURE_LOCAL_REALTIME_DATA_DIR --launch_hook= --logging_verbosity_level=$PS_VERBOSITY --public_key_endpoint=$PUBLIC_KEY_ENDPOINT --stderrthreshold=0 --data_loading_num_threads=$DATA_LOADING_NUM_THREADS
