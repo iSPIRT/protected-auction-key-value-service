@@ -1,7 +1,11 @@
+common --noenable_bzlmod
 build --announce_rc
 build --verbose_failures
 build --compilation_mode=opt
 build --output_filter='^//((?!(third_party):).)*$'
+build --java_runtime_version=remotejdk_21
+build --tool_java_runtime_version=remotejdk_21
+build --features=-parse_headers
 build --color=yes
 build --workspace_status_command="bash tools/get_workspace_status"
 build --copt=-Werror=thread-safety

@@ -32,9 +32,9 @@ def container_deps():
         # Used for deploying Envoy locally
         "envoy-distroless": {
             "arch_hashes": {
-                # v1.24.1
-                "amd64": "9f5d0d7c817c588cd4bd6ef4508ad544ef19cef6d217aa894315790da7662ba7",
-                "arm64": "94c9e77eaa85893daaf95a20fdd5dfb3141250a8c5d707d789265ee3abe49a1e",
+                # v1.31.4
+                "amd64": "f3e9f6139898db74177ac4f41dabd8750a39724ec28c5762a2c5ac61cc965253",
+                "arm64": "ed571f4a0e1ff09617cc845397cf320ceeeda74d9ebaadba78879e80a3008365",
             },
             "registry": "docker.io",
             "repository": "envoyproxy/envoy-distroless",
