@@ -1,3 +1,7 @@
+common --noenable_bzlmod
 build --verbose_failures
 build --color=yes
+build --java_runtime_version=remotejdk_21
+build --tool_java_runtime_version=remotejdk_21
+build --features=-parse_headers
 test --test_output=errors
