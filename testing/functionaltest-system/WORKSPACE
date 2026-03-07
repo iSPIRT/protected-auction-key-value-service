@@ -1,5 +1,8 @@
 workspace(name = "google_privacysandbox_functionaltest_system")
 
+load("//third_party:jdk_override.bzl", "jdk_21_override")
+jdk_21_override()
+
 load("//:deps.bzl", repo_dependencies = "dependencies")
 
 repo_dependencies()
