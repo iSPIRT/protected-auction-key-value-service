@@ -25,6 +25,10 @@ trap _print_runtime EXIT
 function _print_runtime() {
   local -r -i STATUS=$?
   local -r -i END=$(date +%s)
+  # Remove embedded JDK from Bazel cache for Nessus compliance (only after all builds complete)
+  if [[ -d "${HOME}/.cache/bazel" ]]; then
+    find "${HOME}/.cache/bazel" -type d -path "*/install/*/embedded_tools/jdk" -exec rm -rf {} + 2>/dev/null || true
+  fi
   /usr/bin/env LC_ALL=en_US.UTF-8 printf "\nbuild_and_test_all_in_docker runtime: %'ds\n" $((END - START)) &>/dev/stderr
   if [[ ${STATUS} -eq 0 ]]; then
     printf "build_and_test_in_docker completed successfully\n" &>/dev/stderr

@@ -327,8 +327,8 @@ COUPLING ZONE 6: Runtime images ↔ Debian generation
 | Dependency | Version/Ref | Defined In | Used By |
 |---|---|---|---|
 | Bazel | 7.4.1 | `.bazelversion` | Whole workspace |
-| JDK (embedded) | (Bazel 7 default) | Bazel binary | Build process |
-| JDK (remote toolchain) | remotejdk_21 | `.bazelrc` | Build process |
+| JDK (embedded) | 21.0.4 (Bazel 7.4.1) | Bazel install | Bazel server; removed post-build by build_and_test_all_in_docker for Nessus compliance |
+| JDK (remote toolchain) | 21.48.15 CA | `third_party_deps/jdk_override.bzl` | Java compilation |
 | distroless base | cc-debian12 | `builders/bazel/container_deps.bzl` | Runtime images |
 | Envoy | v1.31.4 (distroless image), v1.24.1 (binary for GCP) | `third_party_deps/container_deps.bzl` | Runtime / packaging |
 | google_privacysandbox_servers_common | main branch archive | WORKSPACE | ROMA, key_fetcher, telemetry, logger, retry, CPIO |

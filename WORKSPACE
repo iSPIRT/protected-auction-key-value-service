@@ -1,6 +1,9 @@
 workspace(name = "google_privacysandbox_kv_server")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("//third_party_deps:jdk_override.bzl", "jdk_21_override")
+
+jdk_21_override()
 
 local_repository(
     name = "google_privacysandbox_functionaltest_system",
