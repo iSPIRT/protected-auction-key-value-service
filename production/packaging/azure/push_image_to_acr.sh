@@ -23,7 +23,7 @@
 #
 # Required environment variables:
 #   BUILD_FLAVOR     prod | nonprod (no default)
-#   RELEASE_VERSION  e.g. 4.8.1.2 (no default)
+#   RELEASE_VERSION  e.g. 1.2.1.2 (no default)
 #
 # Optional:
 #   ACR_REGISTRY     e.g. myregistry.azurecr.io (default: ispirt.azurecr.io)

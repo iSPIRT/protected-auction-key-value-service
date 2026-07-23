@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <thread>
@@ -21,6 +22,7 @@
 #include "absl/flags/marshalling.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "components/cloud_config/parameter_client.h"
 #include "public/constants.h"
@@ -77,11 +79,45 @@ ABSL_FLAG(std::string, consented_debug_token, "", "Consented debug token");
 namespace kv_server {
 namespace {
 
+constexpr char kCollectorEndpointEnv[] = "COLLECTOR_ENDPOINT";
+constexpr char kTelemetryConfigEnv[] = "TELEMETRY_CONFIG";
+constexpr char kEnableOtelBasedLoggingEnv[] = "ENABLE_OTEL_BASED_LOGGING";
+
+std::string GetEnvOrEmpty(const char* name) {
+  const char* value = std::getenv(name);
+  return value != nullptr ? std::string(value) : std::string();
+}
+
+bool ParseBoolFromEnv(const char* name, bool default_value) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || *value == '\0') {
+    return default_value;
+  }
+  if (absl::EqualsIgnoreCase(value, "true") ||
+      absl::EqualsIgnoreCase(value, "1")) {
+    return true;
+  }
+  if (absl::EqualsIgnoreCase(value, "false") ||
+      absl::EqualsIgnoreCase(value, "0")) {
+    return false;
+  }
+  return default_value;
+}
+
 class AzureParameterClient : public ParameterClient {
  public:
   AzureParameterClient(
       privacy_sandbox::server_common::log::PSLogContext& log_context)
       : log_context_(log_context) {
+    const std::string collector_endpoint = GetEnvOrEmpty(kCollectorEndpointEnv);
+    const bool use_external_metrics_collector = !collector_endpoint.empty();
+    const std::string telemetry_config = [&]() {
+      const std::string from_env = GetEnvOrEmpty(kTelemetryConfigEnv);
+      return from_env.empty() ? absl::GetFlag(FLAGS_telemetry_config) : from_env;
+    }();
+    const bool enable_otel_logger = ParseBoolFromEnv(
+        kEnableOtelBasedLoggingEnv, absl::GetFlag(FLAGS_enable_otel_logger));
+
     string_flag_values_.insert(
         {"kv-server-azure-directory", absl::GetFlag(FLAGS_delta_directory)});
     string_flag_values_.insert({"kv-server-azure-data-bucket-id",
@@ -92,8 +128,10 @@ class AzureParameterClient : public ParameterClient {
                                 absl::GetFlag(FLAGS_realtime_directory)});
     string_flag_values_.insert({"kv-server-azure-data-loading-file-format",
                                 absl::GetFlag(FLAGS_data_loading_file_format)});
-    string_flag_values_.insert({"kv-server-azure-telemetry-config",
-                                absl::GetFlag(FLAGS_telemetry_config)});
+    string_flag_values_.insert(
+        {"kv-server-azure-telemetry-config", telemetry_config});
+    string_flag_values_.insert(
+        {"kv-server-azure-metrics-collector-endpoint", collector_endpoint});
     string_flag_values_.insert(
         {"kv-server-azure-data-loading-blob-prefix-allowlist",
          absl::GetFlag(FLAGS_data_loading_prefix_allowlist)});
@@ -140,10 +178,11 @@ class AzureParameterClient : public ParameterClient {
                               absl::GetFlag(FLAGS_add_missing_keys_v1)});
     bool_flag_values_.insert({"kv-server-azure-use-real-coordinators", true});
     bool_flag_values_.insert(
-        {"kv-server-azure-use-external-metrics-collector-endpoint", false});
+        {"kv-server-azure-use-external-metrics-collector-endpoint",
+         use_external_metrics_collector});
     bool_flag_values_.insert({"kv-server-azure-use-sharding-key-regex", false});
-    bool_flag_values_.insert({"kv-server-azure-enable-otel-logger",
-                              absl::GetFlag(FLAGS_enable_otel_logger)});
+    bool_flag_values_.insert(
+        {"kv-server-azure-enable-otel-logger", enable_otel_logger});
     bool_flag_values_.insert({"kv-server-azure-enable-consented-log",
                               absl::GetFlag(FLAGS_enable_consented_log)});
     bool_flag_values_.insert({"kv-server-azure-udf-enable-stacktrace",

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdlib>
 #include <string>
 #include <thread>
 
@@ -186,6 +187,48 @@ TEST(ParameterClientAzure, ExpectedFlagDefaultsArePresent) {
     ASSERT_TRUE(statusor.ok());
     EXPECT_EQ("mode: EXPERIMENT", *statusor);
   }
+  {
+    const auto statusor = client->GetParameter(
+        "kv-server-azure-metrics-collector-endpoint");
+    ASSERT_TRUE(statusor.ok());
+    EXPECT_EQ("", *statusor);
+  }
+}
+
+TEST(ParameterClientAzure, CollectorEndpointFromEnvEnablesExternalMetrics) {
+  ASSERT_EQ(setenv("COLLECTOR_ENDPOINT",
+                    "otel-collector-service.ad_selection.microsoft:4317", 1),
+            0);
+  std::unique_ptr<ParameterClient> client = ParameterClient::Create();
+  ASSERT_TRUE(client != nullptr);
+
+  {
+    const auto statusor = client->GetBoolParameter(
+        "kv-server-azure-use-external-metrics-collector-endpoint");
+    ASSERT_TRUE(statusor.ok());
+    EXPECT_EQ(true, *statusor);
+  }
+  {
+    const auto statusor = client->GetParameter(
+        "kv-server-azure-metrics-collector-endpoint");
+    ASSERT_TRUE(statusor.ok());
+    EXPECT_EQ("otel-collector-service.ad_selection.microsoft:4317", *statusor);
+  }
+
+  unsetenv("COLLECTOR_ENDPOINT");
+}
+
+TEST(ParameterClientAzure, TelemetryConfigFromEnvOverridesDefault) {
+  ASSERT_EQ(setenv("TELEMETRY_CONFIG", "mode: PROD", 1), 0);
+  std::unique_ptr<ParameterClient> client = ParameterClient::Create();
+  ASSERT_TRUE(client != nullptr);
+
+  const auto statusor =
+      client->GetParameter("kv-server-azure-telemetry-config");
+  ASSERT_TRUE(statusor.ok());
+  EXPECT_EQ("mode: PROD", *statusor);
+
+  unsetenv("TELEMETRY_CONFIG");
 }
 
 }  // namespace
