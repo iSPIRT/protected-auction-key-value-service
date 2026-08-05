@@ -19,9 +19,9 @@ python_register_toolchains("//builders/bazel")
 http_archive(
     name = "google_privacysandbox_servers_common",
     sha256 = "",  # Microsoft Hash must be empty
-    strip_prefix = "ad-selection-api.data-plane-shared-libraries-saurabh-grace-period-key-range-fetch",
+    strip_prefix = "ad-selection-api.data-plane-shared-libraries-saurabh-grace-period-no-header",
     urls = [
-        "https://github.com/Saurabhspi/ad-selection-api.data-plane-shared-libraries/archive/refs/heads/saurabh/grace-period-key-range-fetch.tar.gz",
+        "https://github.com/Saurabhspi/ad-selection-api.data-plane-shared-libraries/archive/refs/heads/saurabh/grace-period-no-header.tar.gz",
     ],
 )
 
