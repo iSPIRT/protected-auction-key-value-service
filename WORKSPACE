@@ -19,10 +19,10 @@ python_register_toolchains("//builders/bazel")
 http_archive(
     name = "google_privacysandbox_servers_common",
     sha256 = "",  # Microsoft Hash must be empty
-    strip_prefix = "ad-selection-api.data-plane-shared-libraries-main",
-    urls = [
-        "https://github.com/iSPIRT/ad-selection-api.data-plane-shared-libraries/archive/refs/heads/main.tar.gz",
-    ],
+    strip_prefix = "ad-selection-api.data-plane-shared-libraries-saurabh-entra-v2",
+urls = [
+    "https://github.com/Saurabhspi/ad-selection-api.data-plane-shared-libraries/archive/refs/heads/saurabh/entra-v2.tar.gz",
+],
 )
 
 load(
